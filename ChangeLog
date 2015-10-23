@@ -1,9 +1,15 @@
-  2015-08-21  paegun <l2paegun@hotmail.com>
+2015-10-21  paegun <l2paegun@hotmail.com>
+    * cache_proxy: version 1.1.0
+      added write-through caching strategy for SET and DEL commands
+      this change is a rollup of the development of several contributors including:
+        paegun <l2paegun@hotmail.com>
+        Nikolay-Kha <Nikolay.Khabarov@dataart.com>
+
+2015-08-21  paegun <l2paegun@hotmail.com>
     * cache_proxy: version 1.0.0, fork from twemproxy 0.4.0
       added backend server, supporting only Riak
       added read-through caching strategy for GET command
-      this change is a rollup of the research and development of
-	  several contributors including:
+      this change is a rollup of the research and development of several contributors including:
         aberghage <aberghage@gmail.com>
         erikleitch <eleitch@basho.com>
         paegun <l2paegun@hotmail.com>

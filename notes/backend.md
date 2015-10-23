@@ -94,6 +94,11 @@ subscriber to the MEQ can pull the affected keys and issue cache invalidation me
     +---------+----------------------------+------------------------------------+
     | GET     | GET key                    | BE GET -> FE SET w/ expiry         |
     +---------+----------------------------+------------------------------------+
+    | SET     | SET key value              | BE GET -> BE SET -> FE PEXPIRE     |
+    +---------+----------------------------+------------------------------------+
+    | DEL     | DEL key [key2 keyn]        | BE DEL -> FE PEXPIRE, for each key |
+    |         |                            | with the scattered request gathered|
+    +---------+----------------------------+------------------------------------+
 
 ## Source Files Affected
 

@@ -262,6 +262,8 @@ done:
         return NULL;
     }
 
+    msg->msgs_post = array_create(1, sizeof(struct msg*));
+
     if (msg->backend_resend_servers == NULL) {
         msg->backend_resend_servers = array_create(1, sizeof(struct server**));
         if (msg->backend_resend_servers == NULL) {
@@ -297,6 +299,7 @@ done:
     msg->fdone = 0;
     msg->swallow = 0;
     msg->redis = 0;
+    msg->has_vclock = 0;
 
     return msg;
 }
@@ -422,6 +425,12 @@ msg_free(struct msg *msg)
         msg->backend_resend_servers->nelem = 0;
         array_destroy(msg->backend_resend_servers);
         msg->backend_resend_servers = NULL;
+    }
+
+    if (msg->msgs_post != NULL) {
+        msg->msgs_post->nelem = 0;
+        array_destroy(msg->msgs_post);
+        msg->msgs_post = NULL;
     }
 
     log_debug(LOG_VVERB, "free msg %p id %"PRIu64"", msg, msg->id);

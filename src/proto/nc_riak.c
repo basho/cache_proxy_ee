@@ -29,11 +29,15 @@
 
 typedef enum {
     REQ_RIAK_GET = 9,
+    REQ_RIAK_PUT = 11,
+    REQ_RIAK_DEL = 13,
 } riak_req_t;
 
 typedef enum {
     RSP_RIAK_UNKNOWN = 0x0,
     RSP_RIAK_GET = 10,
+    RSP_RIAK_PUT = 12,
+    RSP_RIAK_DEL = 14,
 } riak_rsp_t;
 
 void parse_pb_get_req(struct msg *r, uint32_t* len, uint8_t* msgid, RpbGetReq** req);
@@ -43,14 +47,21 @@ bool get_pb_msglen(struct msg* r, uint32_t* len, uint8_t* msgid);
 bool get_pb_mbuflen(struct mbuf* mbuf, uint32_t* len, uint8_t* msgid);
 
 rstatus_t encode_pb_get_req(struct msg* r, struct conn* s_conn, msg_type_t type);
+rstatus_t _encode_pb_get_req(struct msg* r, struct conn* s_conn, msg_type_t type,
+                   unsigned read_before_write);
+rstatus_t encode_pb_put_req(struct msg* r, struct conn* s_conn, msg_type_t type);
+rstatus_t encode_pb_del_req(struct msg* r, struct conn* s_conn, msg_type_t type);
 
 RpbGetResp* extract_get_rsp(struct msg* r, uint32_t len, uint8_t* msgid);
+RpbPutResp* extract_put_rsp(struct msg* r, uint32_t len, uint8_t* msgid);
+bool extract_del_rsp(struct msg* r, uint32_t len, uint8_t* msgid);
 
 rstatus_t repack_get_rsp(struct msg* r, RpbGetResp* rpbresp);
 
 /*
-* Sibling resolution functions
-*/
+ * Sibling resolution functions
+ */
+
 unsigned choose_sibling(RpbGetResp* rpbresp);
 unsigned choose_last_modified_sibling(RpbGetResp* rpbresp);
 unsigned choose_random_sibling(unsigned nSib);
@@ -77,9 +88,9 @@ riak_parse_rsp(struct msg *r)
     r->result = MSG_PARSE_OK;
 
     /*
-    * Do we have enough information to parse the message length?  If
-    * not, try again later
-    */
+     * Do we have enough information to parse the message length?  If
+     * not, try again later
+     */
 
     uint32_t len = 0;
     uint8_t msgid = RSP_RIAK_UNKNOWN;
@@ -89,10 +100,10 @@ riak_parse_rsp(struct msg *r)
         return;
     }
 
-    /*
-    * If the mbuf len is less than message len + sizeof(len), we are
-    * not done reading
-    */
+    /* 
+     * If the mbuf len is less than message len + sizeof(len), we are
+     * not done reading
+     */
 
     if (r->mlen < len + 4) {
         r->result = MSG_PARSE_AGAIN;
@@ -100,11 +111,11 @@ riak_parse_rsp(struct msg *r)
     }
 
     /*
-    * On return from this method, the message position should point to
-    * the beginning of any unparsed data.  This is used in msg_parsed()
-    * to determine if the mbuf should be split i.e., if more than one
-    * message is encoded in the same set of mbufs)
-    */
+     * On return from this method, the message position should point to
+     * the beginning of any unparsed data.  This is used in msg_parsed()
+     * to determine if the mbuf should be split i.e., if more than one
+     * message is encoded in the same set of mbufs)
+     */
 
     struct msg_pos msg_start = msg_pos_init();
     msg_pos_init_start(r, &msg_start);
@@ -115,25 +126,29 @@ riak_parse_rsp(struct msg *r)
     r->pos = msg_end.ptr;
 
     /*
-    * If we get here, we are done reading at least one message --
-    * use the msgid to determine what the message is, and extract the
-    * PB-formatted response from the message buffer
-    */
+     * If we get here, we are done reading at least one message --
+     * use the msgid to determine what the message is, and extract the
+     * PB-formatted response from the message buffer
+     */
     switch (msgid) {
     case RSP_RIAK_GET:
         /*
-        * if you really need to do something here, just use sample below
-        * {
-        *   RpbGetResp* rpbresp = extract_get_rsp(r, len, &msgid);
-        *   if (rpbresp == NULL) {
-        *     r->result = MSG_PARSE_ERROR;
-        *   } else {
-        *     rpb_get_resp__free_unpacked(rpbresp);
-        *   }
-        * }
-        */
+         * if you really need to do something here, just use sample below
+         * {
+         *    RpbGetResp* rpbresp = extract_get_rsp(r, len, &msgid);
+         *    if (rpbresp == NULL) {
+         *        r->result = MSG_PARSE_ERROR;
+         *    } else {
+         *        rpb_get_resp__free_unpacked(rpbresp);
+         *    }
+         * }
+         */
         break;
-
+    case RSP_RIAK_PUT:
+        break;
+    case RSP_RIAK_DEL:
+        /* DEL doesn't have response */
+        return;
     default:
         r->result = MSG_PARSE_ERROR;
         break;
@@ -220,7 +235,7 @@ riak_pre_coalesce(struct msg *r)
     switch (r->type) {
     case MSG_RSP_RIAK_INTEGER:
         /* only redis 'del' fragmented request sends back integer reply */
-        /* ASSERT(pr->type == MSG_REQ_RIAK_DEL); */
+        ASSERT(pr->type == MSG_REQ_RIAK_DEL);
 
         mbuf = STAILQ_FIRST(&r->mhdr);
         /*
@@ -237,7 +252,6 @@ riak_pre_coalesce(struct msg *r)
 
         pr->frag_owner->integer = pr->integer;
         break;
-
     default:
         /*
          * Valid responses for a fragmented request are MSG_RSP_REDIS_INTEGER or,
@@ -322,14 +336,58 @@ riak_req_remap(struct conn* conn, struct msg* msg)
 {
     ASSERT(msg != NULL);
     ASSERT(conn != NULL);
+    /* related pre- or post-message */
+    struct msg *msgp = NULL;
+    rstatus_t status = NC_OK;
 
     switch (msg->type) {
     case MSG_REQ_RIAK_GET:
         break;
 
     case MSG_REQ_REDIS_GET:
-        if (encode_pb_get_req(msg, conn, MSG_REQ_RIAK_GET)) {
-            return NC_ERROR;
+        if ((status = encode_pb_get_req(msg, conn, MSG_REQ_RIAK_GET)) != NC_OK) {
+            return status;
+        }
+
+        break;
+
+    case MSG_REQ_REDIS_SET:
+        if (msg->has_vclock) {
+            if ((status = encode_pb_put_req(msg, conn, MSG_REQ_RIAK_SET)) != NC_OK) {
+                return status;
+            }
+        } else {
+            /* currently there is no configuration settings that would cause
+             * no read_before_write, but there may be, ie for bucket patterns
+             * or for all requests since Riak can be configured in a
+             * last-write-wins (LWW) manner.
+             *
+             * read_before_write to get the vclock to avoid "sibling explosion".
+             * cloning the SET since it will yield the equivalent key for a GET.
+             */
+            msgp = msg_content_clone(msg);
+            if (msgp == NULL) {
+                return NC_ENOMEM;
+            }
+            msgp->parser(msgp);
+
+            /* PUT as a post message, so the vclock from the read-before-write
+             * msg can be set on recv of the GET response.
+             * do NOT encode PUT yet, will do when we have a vclock.
+             */
+
+            if ((status = _encode_pb_get_req(msg, conn, MSG_REQ_RIAK_GET, 1)) != NC_OK) {
+                return status;
+            }
+
+            array_set(msg->msgs_post, msgp, sizeof(msgp), 1);
+            array_push(msg->msgs_post);
+        }
+    break;
+
+    case MSG_REQ_REDIS_DEL:
+        if ((status = encode_pb_del_req(msg, conn, MSG_REQ_RIAK_DEL)) != NC_OK) {
+            return status;
         }
         break;
 
@@ -379,7 +437,9 @@ extract_bucket_key_value(struct msg *r, ProtobufCBinaryData *bucket,
                                             keyname_start_pos, keynamelen))
         != NC_OK) {
         nc_free(bucket->data);
-        return status;
+
+        /* no bucket, bad request */
+        return NC_EBADREQ;
     }
 
     uint8_t* sep = bucket->data + keynamelen - 1;
@@ -391,7 +451,7 @@ extract_bucket_key_value(struct msg *r, ProtobufCBinaryData *bucket,
     if (sep < bucket->data) {
         if (allow_empty_bucket == false) {
             nc_free(bucket->data);
-            return NC_ERROR;
+            return NC_EBADREQ;
         }
         bucket->len = 0;
     } else {
@@ -435,27 +495,28 @@ pack_message(struct msg *r, msg_type_t type, uint32_t msglen, uint8_t reqid,
     uint32_t netlen = htonl(msglen + 1);
 
     /*
-    * Construct the length of the whole message we will send to
-    * riak. This is:
-    *
-    *    size of the msglen integer
-    *  + a byte for the message type
-    *  + the length of the pb-encoded message
-    */
+     * Construct the length of the whole message we will send to
+     * riak. This is:
+     *
+     *   size of the msglen integer
+     * + a byte for the message type
+     * + the length of the pb-encoded message
+     */
 
     uint32_t pbmsglen = sizeof(msglen) + 1 + msglen;
 
     /*
-    * Insert the message length, request ID and the data payload.
-    *
-    * If the first message mbuf has enough room to contain the message,
-    * just reuse it.  Else we have to allocate a contiguous buffer
-    * large enough to format the PB request before packing it into the
-    * message
-    */
+     * Insert the message length, request ID and the data payload.
+     *
+     * If the first message mbuf has enough room to contain the message,
+     * just reuse it.  Else we have to allocate a contiguous buffer
+     * large enough to format the PB request before packing it into the
+     * message
+     */
 
     struct mbuf* mbuf = STAILQ_FIRST(&r->mhdr);
     if (pbmsglen <= mbuf_size(mbuf)) {
+
         mbuf_rewind(mbuf);
 
         mbuf_copy(mbuf, (uint8_t*)&netlen, sizeof(netlen));
@@ -488,10 +549,8 @@ pack_message(struct msg *r, msg_type_t type, uint32_t msglen, uint8_t reqid,
         nc_free(buf);
     }
 
-    /*
-    * Set bucketlen, but use existing keylen (-1 to calc it). Also leave key
-    * offset as is.
-    */
+    /* Set bucketlen, but use existing keylen (-1 to calc it). Also leave key
+     * offset as is. */
     msg_set_keypos(r, 0, 7, -1, bucketlen);
 
     r->mlen = pbmsglen;
@@ -507,6 +566,13 @@ pack_message(struct msg *r, msg_type_t type, uint32_t msglen, uint8_t reqid,
 rstatus_t
 encode_pb_get_req(struct msg* r, struct conn* s_conn, msg_type_t type)
 {
+    return _encode_pb_get_req(r, s_conn, type, 0);
+}
+
+rstatus_t
+_encode_pb_get_req(struct msg* r, struct conn* s_conn, msg_type_t type,
+                   unsigned read_before_write)
+{
     ASSERT(r != NULL);
     ASSERT(s_conn != NULL);
 
@@ -520,7 +586,6 @@ encode_pb_get_req(struct msg* r, struct conn* s_conn, msg_type_t type)
         != NC_OK)
         return status;
 
-    /* Set options specified in the conf file */
     struct server* server = (struct server*)(s_conn->owner);
     const struct server_pool* pool = (struct server_pool*)(server->owner);
     const struct backend_opt* opt = &pool->backend_opt;
@@ -570,10 +635,192 @@ encode_pb_get_req(struct msg* r, struct conn* s_conn, msg_type_t type)
         req.timeout = opt->riak_timeout;
     }
 
+    r->read_before_write = read_before_write;
+
     status = pack_message(r, type, rpb_get_req__get_packed_size(&req), REQ_RIAK_GET, (pack_func)rpb_get_req__pack, &req, req.bucket.len);
     nc_free(req.bucket.data);
 
     return status;
+}
+
+/**.......................................................................
+ * Take a Redis SET request, and remap it to a PB message suitable for
+ * sending to riak.
+ */
+rstatus_t
+encode_pb_put_req(struct msg* r, struct conn* s_conn, msg_type_t type)
+{
+    ASSERT(r != NULL);
+    ASSERT(s_conn != NULL);
+
+    rstatus_t status;
+
+    RpbPutReq req = RPB_PUT_REQ__INIT;
+    req.has_key = 1;
+    RpbContent content = RPB_CONTENT__INIT;
+    req.content = &content;
+
+    struct msg_pos keyname_start_pos = msg_pos_init();
+    if ((status = extract_bucket_key_value(r, &req.bucket, &req.key,
+                    &req.content[0].value, &keyname_start_pos, false))
+            != NC_OK)
+        return status;
+
+    if (req.bucket.len <= 0) {
+        return NC_ERROR;
+    }
+
+    struct server* server = (struct server*)(s_conn->owner);
+    const struct server_pool* pool = (struct server_pool*)(server->owner);
+    const struct backend_opt* opt = &pool->backend_opt;
+
+    req.has_w = (opt->riak_w != CONF_UNSET_NUM);
+    if (req.has_w) {
+        req.w = opt->riak_w;
+    }
+
+    req.has_pw = (opt->riak_pw != CONF_UNSET_NUM);
+    if (req.has_pw) {
+        req.pw = opt->riak_pw;
+    }
+
+    req.has_n_val = (opt->riak_n != CONF_UNSET_NUM);
+    if (req.has_n_val) {
+        req.n_val = opt->riak_n;
+    }
+
+    req.has_sloppy_quorum =
+            (opt->riak_sloppy_quorum != CONF_UNSET_NUM);
+    if (req.has_sloppy_quorum) {
+        req.sloppy_quorum = opt->riak_sloppy_quorum;
+    }
+
+    if (req.content != NULL) {
+        req.content[0].has_content_type = (protobuf_c_boolean)1;
+        req.content[0].content_type.len = 10; /*<< strlen("text/plain")*/
+        req.content[0].content_type.data = (uint8_t*)"text/plain";
+    }
+
+    /* Set the vclock, otherwise causing "sibling explosion" */
+    if (r->has_vclock && r->vclock.len > 0) {
+        req.has_vclock = (protobuf_c_boolean)1;
+        req.vclock = r->vclock;
+    }
+
+    status = pack_message(r, type, rpb_put_req__get_packed_size(&req), REQ_RIAK_PUT, (pack_func)rpb_put_req__pack, &req, req.bucket.len);
+    nc_free(req.bucket.data);
+    nc_free(req.content->value.data);
+    return status;
+}
+
+/**.......................................................................
+ * Take a Redis DEL request, and remap it to a PB message suitable for
+ * sending to riak.
+ */
+rstatus_t
+encode_pb_del_req(struct msg* r, struct conn* s_conn, msg_type_t type)
+{
+    ASSERT(r != NULL);
+    ASSERT(s_conn != NULL);
+
+    struct conn *c_conn = r->owner;
+    struct context *ctx = conn_to_ctx(c_conn);
+
+    rstatus_t status;
+    struct server* server = (struct server*)(s_conn->owner);
+    const struct server_pool* pool = (struct server_pool*)(server->owner);
+    const struct backend_opt* opt = &pool->backend_opt;
+
+    RpbDelReq req = RPB_DEL_REQ__INIT;
+    struct msg_pos keyname_start_pos = msg_pos_init();
+    uint32_t keys_number = 0;
+    struct mbuf *mbuffirst = r->mhdr.stqh_first;
+    while ((status = extract_bucket_key_value(r, &req.bucket, &req.key, NULL,
+                                              &keyname_start_pos, true))
+           == NC_OK) {
+        if (req.bucket.len > 0) {
+            req.has_w = (opt->riak_w != CONF_UNSET_NUM);
+            if (req.has_w) {
+                req.w = opt->riak_w;
+            }
+
+            req.has_pw = (opt->riak_pw != CONF_UNSET_NUM);
+            if (req.has_pw) {
+                req.pw = opt->riak_pw;
+            }
+
+            req.has_n_val = (opt->riak_n != CONF_UNSET_NUM);
+            if (req.has_n_val) {
+                req.n_val = opt->riak_n;
+            }
+
+            req.has_sloppy_quorum = (opt->riak_sloppy_quorum
+                    != CONF_UNSET_NUM);
+            if (req.has_sloppy_quorum) {
+                req.sloppy_quorum = opt->riak_sloppy_quorum;
+            }
+
+            req.has_timeout = (opt->riak_timeout != CONF_UNSET_NUM);
+            if (req.has_timeout) {
+                req.timeout = opt->riak_timeout;
+            }
+
+            struct mbuf *mbuf = mbuf_get();
+            if (mbuf == NULL) {
+                nc_free(req.bucket.data);
+                return NC_ENOMEM;
+            }
+            STAILQ_INSERT_HEAD(&r->mhdr, mbuf, next);
+
+            status = pack_message(r, type, rpb_del_req__get_packed_size(&req),
+                                  REQ_RIAK_DEL, (pack_func)rpb_del_req__pack,
+                                  &req, req.bucket.len);
+            keys_number++;
+        } else {
+            status = add_pexpire_msg_key(ctx, c_conn, (char*)req.key.data,
+                                         req.key.len, 0);
+            r->integer++;
+        }
+
+        if (req.bucket.data != NULL) {
+            nc_free(req.bucket.data);
+        }
+
+        if (status != NC_OK)
+            return status;
+    }
+
+    /* Mark number of sub messages */
+    r->nfrag = keys_number;
+
+    /* remove last mbuf from message - it contains just list of keys */
+    if (keys_number > 0) {
+        while (mbuffirst->next.stqe_next) {
+            mbuf_remove(&r->mhdr, mbuffirst->next.stqe_next);
+        }
+        mbuf_remove(&r->mhdr, mbuffirst);
+        return NC_OK;
+    } else if (r->integer > 0) {
+        /* if no messages for riak, then answer on response with number of redis requests(bucketless keys) */
+        ASSERT(r->frag_owner != NULL);
+        struct conn *conn = r->frag_owner->owner;
+        ASSERT(conn != NULL);
+        r->frag_owner->integer = r->integer;
+
+        /* remove subresponse of fragmented message */
+        r->noreply = 1;
+        r->frag_owner->nfrag_done = r->frag_owner->nfrag;
+
+        // TODO: likely make this an if something in q, otherwise
+        // this is crashing for DEL of a single bucketless key
+        // c_conn->dequeue_outq(ctx, conn, r);
+
+        status = event_add_out(ctx->evb, conn);
+
+        /* prevent from forwarding */
+        return NC_EAGAIN;
+    }
+    return NC_ERROR;
 }
 
 /**.......................................................................
@@ -596,6 +843,73 @@ parse_pb_get_req(struct msg *r, uint32_t* len, uint8_t* msgid, RpbGetReq** req)
     uint8_t* pos = mbuf->start + 4 + 1;
 
     *req = rpb_get_req__unpack(NULL, *len - 1, pos);
+}
+
+void
+parse_pb_del_req(struct mbuf *mbuf, uint32_t* len, uint8_t* msgid,
+                 RpbDelReq** req)
+{
+    ASSERT(mbuf != NULL);
+    ASSERT(len != NULL);
+    ASSERT(msgid != NULL);
+    ASSERT(req != NULL);
+
+    get_pb_mbuflen(mbuf, len, msgid);
+
+    /* Skip the message length */
+
+    uint8_t* pos = mbuf->start + 4 + 1;
+
+    *req = rpb_del_req__unpack(NULL, *len - 1, pos);
+}
+
+/**.......................................................................
+ * Parse a protobuf-encoded PUT request into a request structure
+ */
+void
+parse_pb_put_req(struct msg *r, uint32_t* len, uint8_t* msgid, RpbPutReq** req)
+{
+    ASSERT(r != NULL);
+    ASSERT(len != NULL);
+    ASSERT(msgid != NULL);
+    ASSERT(req != NULL);
+
+    struct mbuf* mbuf = STAILQ_FIRST(&r->mhdr);
+
+    get_pb_msglen(r, len, msgid);
+
+    /* Skip the message length */
+
+    uint8_t* pos = mbuf->start + 4 + 1;
+
+    *req = rpb_put_req__unpack(NULL, *len - 1, pos);
+}
+
+/**.......................................................................
+ * Add a PEXIPIRE message to a server's queue, parsing the key name and
+ * value from a RIAK DEL request
+ */
+rstatus_t
+add_pexpire_msg_riak(struct context *ctx, struct conn* c_conn, struct msg* msg)
+{
+    uint32_t len;
+    uint8_t msgid;
+    RpbDelReq* req = NULL;
+    struct mbuf *mbuf;
+    STAILQ_FOREACH(mbuf, &msg->peer->mhdr, next) {
+        parse_pb_del_req(mbuf, &len, &msgid, &req);
+        if (req == NULL)
+            return NC_ENOMEM;
+
+        const uint32_t keynamelen = req->bucket.len + req->key.len + 1;
+        char keyname[keynamelen + 1];
+        sprintf(keyname, "%.*s:%.*s", (int)req->bucket.len, req->bucket.data,
+                (int)req->key.len, req->key.data);
+
+        add_pexpire_msg_key(ctx, c_conn, keyname, keynamelen, 0);
+        nc_free(req);
+    }
+    return NC_OK;
 }
 
 /**.......................................................................
@@ -655,12 +969,12 @@ extract_rsp(struct msg* r, uint32_t len, uint8_t* msgid, unpack_func func,
     uint32_t allocs = 0;
 
     /*
-    * If the first message in this object fits into a single mbuf, then
-    * we can just read from the first mbuf
-    * But if not, we have to allocate a buffer into which we will copy
-    * the message from multiple mbufs, to pass to
-    * rpb_get_resp__unpack below
-    */
+     * If the first message in this object fits into a single mbuf, then
+     * we can just read from the first mbuf
+     * Bu if not, we have to allocate a buffer into which we will copy
+     * the message from multiple mbufs, to pass to
+     * rpb_get_resp__unpack below
+     */
     if (len + 4 > mbuf_data_size())
         allocs = r->mlen;
 
@@ -678,9 +992,15 @@ extract_rsp(struct msg* r, uint32_t len, uint8_t* msgid, unpack_func func,
         buf = mbuf->start;
     }
 
+    /* Skip the message length */
+
     uint8_t* pos = buf + 4;
 
+    /* Get the message id */
+
     *msgid = *(pos++);
+
+    /* And unpack the PB response from the rest */
 
     if (rpbresp) {
         *rpbresp = func(NULL, len - 1, pos);
@@ -702,6 +1022,27 @@ extract_get_rsp(struct msg* r, uint32_t len, uint8_t* msgid)
 }
 
 /**.......................................................................
+ * Extract a PB-encoded PUT response out of the message buffer
+ */
+RpbPutResp*
+extract_put_rsp(struct msg* r, uint32_t len, uint8_t* msgid)
+{
+    RpbPutResp* rpbresp;
+    extract_rsp(r, len, msgid, (unpack_func)rpb_put_resp__unpack,
+                (void*)&rpbresp);
+    return rpbresp;
+}
+
+/**.......................................................................
+ * Extract a PB-encoded DEL response out of the message buffer
+ */
+bool
+extract_del_rsp(struct msg* r, uint32_t len, uint8_t* msgid)
+{
+    return extract_rsp(r, len, msgid, NULL, NULL);
+}
+
+/**.......................................................................
  * Re-pack a PB-formatted GET response for return to a Redis client
  */
 rstatus_t
@@ -715,25 +1056,27 @@ repack_get_rsp(struct msg* r, RpbGetResp* rpbresp)
     msg_rewind(r);
     r->mlen = 0;
 
+    /* If this response has content, pack the key val */
+
     if (rpbresp->n_content > 0) {
         /*
-        * If there are siblings, there will be more than one keyval
-        * present.
-        * 
-        * For now, we return the last-modified sibling presented by Riak,
-        * unless all have the same last_mod time, in which case we select
-        * a sibling at random
-        * 
-        * We do this rather than return an array of all values, since
-        * Redis clients expect only a single string in response to a GET
-        * command, and not an array.
-        */
-
+         * If there are siblings, there will be more than one keyval
+         * present.
+         * 
+         * For now, we return the last-modified sibling presented by Riak,
+         * unless all have the same last_mod time, in which case we select
+         * a sibling at random
+         *
+         * We do this rather than return an array of all values, since
+         * Redis clients expect only a single string in response to a GET
+         * command, and not an array.
+         */
         unsigned iContent = choose_sibling(rpbresp);
         uint8_t* data = rpbresp->content[iContent]->value.data;
         uint32_t datalen = rpbresp->content[iContent]->value.len;
 
         /* Strip spurious quotes surrounding the value */
+
         if ((datalen > 1) && (data[0] == '\"')) {
             datalen -= 2;
             ++data;
@@ -766,6 +1109,59 @@ repack_get_rsp(struct msg* r, RpbGetResp* rpbresp)
 }
 
 /**.......................................................................
+ * Re-pack a PB-formatted PUT response for return to a Redis client
+ */
+rstatus_t
+repack_put_resp(struct msg* r, RpbPutResp* rpbresp)
+{
+    ASSERT(r != NULL);
+    ASSERT(rpbresp != NULL);
+
+    rstatus_t status = NC_OK;
+
+    msg_rewind(r);
+    r->mlen = 0;
+
+    if ((status = msg_copy_char(r, "+OK\r\n", 5)) != NC_OK) {
+        return status;
+    }
+
+    r->type = MSG_RSP_REDIS_STATUS;
+
+    return NC_OK;
+}
+
+/**.......................................................................
+ * Re-pack a PB-formatted DEL response for return to a Redis client
+ */
+rstatus_t
+repack_del_resp(struct msg* r)
+{
+    ASSERT(r != NULL);
+    rstatus_t status = NC_OK;
+
+    uint8_t msgid;
+    if (extract_del_rsp(r, 0, &msgid) == false) {
+        return NC_ERROR;
+    }
+
+    msg_rewind(r);
+    r->mlen = 0;
+
+    if (msgid == RSP_RIAK_DEL) {
+        r->integer = 1;
+    }
+
+    if ((status = msg_copy_char(r, "+OK\r\n", 5)) != NC_OK) {
+        return status;
+    }
+
+    r->type = MSG_RSP_RIAK_INTEGER;
+
+    return NC_OK;
+}
+
+/**.......................................................................
  * Repack a message -- for Riak responses, this repacks to the
  * equivalent Redis response
  */
@@ -773,12 +1169,13 @@ rstatus_t
 riak_repack(struct msg* r)
 {
     /*
-    * This method is only called after riak_parse_rsp has been
-    * evaluated, so we know at this point that the mbuf contains a valid
-    * message
-    */
+     * This method is only called after riak_parse_rsp has been
+     * evaluated, so we know at this point that the mbuf contains a valid
+     * message
+     */
 
-    RpbGetResp *rpb_get_resp = NULL;
+    RpbGetResp* rpb_get_resp = NULL;
+    RpbPutResp* rpb_put_resp = NULL;
     uint32_t len = 0;
     uint8_t msgid = RSP_RIAK_UNKNOWN;
     if (!get_pb_msglen(r, &len, &msgid)) {
@@ -795,11 +1192,47 @@ riak_repack(struct msg* r)
             break;
         }
 
+        r->has_vclock = rpb_get_resp->has_vclock;
+        r->vclock = rpb_get_resp->vclock;
+
+        if (r->peer != NULL) {
+            r->peer->has_vclock = r->has_vclock;
+            r->peer->vclock = r->vclock;
+        }
+
         if (repack_get_rsp(r, rpb_get_resp) != NC_OK) {
             r->result = MSG_PARSE_ERROR;
         }
 
         rpb_get_resp__free_unpacked(rpb_get_resp, NULL);
+        break;
+
+    case RSP_RIAK_PUT:
+        rpb_put_resp = extract_put_rsp(r, len, &msgid);
+
+        if (rpb_put_resp == NULL) {
+            r->result = MSG_PARSE_ERROR;
+            break;
+        }
+
+        if (repack_put_resp(r, rpb_put_resp) != NC_OK) {
+            r->result = MSG_PARSE_ERROR;
+        }
+
+        rpb_put_resp__free_unpacked(rpb_put_resp, NULL);
+        break;
+
+    case RSP_RIAK_DEL:
+    {
+        if (!extract_del_rsp(r, len, &msgid)) {
+            r->result = MSG_PARSE_ERROR;
+            break;
+        }
+
+        if (repack_del_resp(r) != NC_OK) {
+            r->result = MSG_PARSE_ERROR;
+        }
+    }
         break;
 
     default:

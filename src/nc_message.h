@@ -192,6 +192,8 @@ typedef enum msg_parse_result {
     ACTION( RSP_REDIS_MULTIBULK )                                                                   \
     ACTION( REQ_RIAK_PING )                                                                         \
     ACTION( REQ_RIAK_GET )                                                                          \
+    ACTION( REQ_RIAK_SET )                                                                          \
+    ACTION( REQ_RIAK_DEL )                                                                          \
     ACTION( RSP_RIAK_PING )                                                                         \
     ACTION( RSP_RIAK_KV )                                                                           \
     ACTION( RSP_RIAK_INTEGER )                                                                      \
@@ -217,6 +219,7 @@ struct msg {
 
     uint64_t             id;              /* message id */
     struct msg           *peer;           /* message peer */
+    struct array         *msgs_post;      /* array of messages to send after  */
     struct conn          *owner;          /* message owner - client | server */
 
     struct rbnode        tmo_rbe;         /* entry in rbtree */
@@ -280,6 +283,9 @@ struct msg {
     unsigned             swallow:1;       /* swallow response? */
     unsigned             redis:1;         /* redis? */
     unsigned             riak:1;          /* riak? */
+    unsigned             read_before_write:1; /* read before write to get vclock  */
+    protobuf_c_boolean   has_vclock;      /* riak vclock fields */
+    ProtobufCBinaryData  vclock;          /* riak vclock fields */
 };
 
 struct msg_pos {

@@ -82,9 +82,8 @@ the write operation. The result is that Redis becomes eventually consistent
 with Riak with a window of inconsistency that has an upper bound of the
 configured time-to-live (TTL) value.
 
-Future support for writes through the Cache Proxy, will include
-invalidating the Redis Cache is invalidated immediately via PEXPIRE so
-subsequent reads will be consistent.
+For writes through the Cache Proxy, the Redis Cache is invalidated immediately
+via PEXPIRE so subsequent reads will be consistent.
 
 Future support for invalidating Redis cache on writes to Riak will likely
 emerge as an enterprise feature.
@@ -99,7 +98,11 @@ storage mechanism for a limited set of commands.
     +---------+----------------------------+------------------------------------+
     | Command | Format                     | Message Chain                      |
     +---------+----------------------------+------------------------------------+
+    | DEL     | DEL key                    | BE DEL -> FE PEXPIRE               |
+    +---------+----------------------------+------------------------------------+
     | GET     | GET key                    | BE GET -> FE SET w/ expiry         |
+    +---------+----------------------------+------------------------------------+
+    | SET     | SET key value              | BE GET -> BE SET -> FE PEXPIRE     |
     +---------+----------------------------+------------------------------------+
 
 ## Sibling Resolution
@@ -130,3 +133,23 @@ provide configurable sibling resolution including the following strategies:
 1. Dotted-Vector Version (DVV)
 1. VClock
 1. Last-Modified Date (LMD) aka Last-Write Wins (LWW)
+
+## Read Before Write
+
+As noted noted in the section Sibling Resolution, Riak provides for a line
+of descendency, known as the causal context, for a value stored at a key.
+Clients performing write operations provide this causal context by setting the
+VClock that they last read. If a client does not provide the causal context,
+Riak makes no assumptions, so treats the write as a new causal context, which
+for the case that a value is already stored at the key, means a sibling will
+be created. If an application is written in such a manner as to never set the
+causal context for writes, the Riak anti-pattern of sibling explosion will
+occur, requiring Riak to store multiple versions as well as responding with
+the various sibling identifiers, hoping that the client will perform sibling
+resolution and write back the result, squashing the siblings to a single,
+correct version.
+
+In order to reduce the exposure to siblings, while still benefitting from the
+availability guarantees which siblings provide, the Cache Proxy properly
+performs read operations, including sibling resolution, before writing values
+to Riak.

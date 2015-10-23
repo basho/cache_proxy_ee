@@ -375,8 +375,10 @@ req_server_enqueue_imsgq_head(struct context *ctx, struct conn *conn, struct msg
 
     TAILQ_INSERT_HEAD(&conn->imsg_q, msg, s_tqe);
 
-    stats_server_incr(ctx, conn->owner, in_queue);
-    stats_server_incr_by(ctx, conn->owner, in_queue_bytes, msg->mlen);
+    if (!msg->read_before_write) {
+        stats_server_incr(ctx, conn->owner, in_queue);
+        stats_server_incr_by(ctx, conn->owner, in_queue_bytes, msg->mlen);
+    }
 }
 
 void
@@ -387,8 +389,10 @@ req_server_dequeue_imsgq(struct context *ctx, struct conn *conn, struct msg *msg
 
     TAILQ_REMOVE(&conn->imsg_q, msg, s_tqe);
 
-    stats_server_decr(ctx, conn->owner, in_queue);
-    stats_server_decr_by(ctx, conn->owner, in_queue_bytes, msg->mlen);
+    if (!msg->read_before_write) {
+        stats_server_decr(ctx, conn->owner, in_queue);
+        stats_server_decr_by(ctx, conn->owner, in_queue_bytes, msg->mlen);
+    }
 }
 
 void
@@ -413,8 +417,10 @@ req_server_enqueue_omsgq(struct context *ctx, struct conn *conn, struct msg *msg
 
     TAILQ_INSERT_TAIL(&conn->omsg_q, msg, s_tqe);
 
-    stats_server_incr(ctx, conn->owner, out_queue);
-    stats_server_incr_by(ctx, conn->owner, out_queue_bytes, msg->mlen);
+    if (!msg->read_before_write) {
+        stats_server_incr(ctx, conn->owner, out_queue);
+        stats_server_incr_by(ctx, conn->owner, out_queue_bytes, msg->mlen);
+    }
 }
 
 /**.......................................................................
@@ -444,8 +450,10 @@ req_server_dequeue_omsgq(struct context *ctx, struct conn *conn, struct msg *msg
     msg_tmo_delete(msg);
     TAILQ_REMOVE(&conn->omsg_q, msg, s_tqe);
 
-    stats_server_decr(ctx, conn->owner, out_queue);
-    stats_server_decr_by(ctx, conn->owner, out_queue_bytes, msg->mlen);
+    if (!msg->read_before_write) {
+        stats_server_decr(ctx, conn->owner, out_queue);
+        stats_server_decr_by(ctx, conn->owner, out_queue_bytes, msg->mlen);
+    }
 }
 
 struct msg *
@@ -615,10 +623,6 @@ req_forward(struct context *ctx, struct conn *c_conn, struct msg *msg, bool back
 
     ASSERT(c_conn->client && !c_conn->proxy);
 
-    if (!msg->noreply && enqueue) {
-        c_conn->enqueue_outq(ctx, c_conn, msg);
-    }
-
     ASSERT(array_n(msg->keys) > 0);
     /* TODO: investigate key here, seeing logged messages w/ incorrect key
     * this is not terribly important for Riak as a backend under happy path,
@@ -647,9 +651,28 @@ req_forward(struct context *ctx, struct conn *c_conn, struct msg *msg, bool back
     }
     ASSERT(!s_conn->client && !s_conn->proxy);
 
-    if (s_conn->req_remap(s_conn, msg)==NC_ERROR) {
-      msg->error = 1;
-      return;
+    switch (s_conn->req_remap(s_conn, msg)) {
+    case NC_ERROR:
+        msg->error = 1;
+        return;
+
+    case NC_EBADREQ:
+        switch (msg->type) {
+        case MSG_REQ_REDIS_GET:
+            msg->error = 1;
+            return;
+
+        default:
+            break;
+        }
+
+        backend = 0;
+        server = NULL;
+        s_conn = server_pool_conn_frontend(ctx, pool, key, keylen, server);
+    }
+
+    if (!msg->noreply && enqueue) {
+        c_conn->enqueue_outq(ctx, c_conn, msg);
     }
 
     if (TAILQ_EMPTY(&s_conn->imsg_q)) {
@@ -907,6 +930,10 @@ should_forward_req_to_backend(struct conn *c_conn, struct msg* msg)
 {
     if (conn_nbackend(c_conn) == 0) {
         return false;
+    }
+
+    if (msg->read_before_write || msg->has_vclock) {
+      return true;
     }
 
     switch(msg->type) {

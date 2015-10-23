@@ -35,9 +35,20 @@ bool swallow_response(struct context *ctx, struct conn* c_conn, struct conn* s_c
                       struct msg* pmsg, struct msg* msg);
 
 rstatus_t add_set_msg(struct context *ctx, struct conn* c_conn, struct msg* msg);
+rstatus_t add_pexpire_msg(struct context *ctx, struct conn* c_conn, struct msg* msg);
 
 void init_backend_resend_q(struct msg* msg);
 void insert_in_backend_resend_q(struct msg* msg, struct server* server);
+
+struct backend_enqueue_post_msg_param {
+    struct context *ctx;
+    struct conn *c_conn;
+    struct conn *s_conn;
+};
+rstatus_t backend_enqueue_post_msg(void *elem /*struct msg *msg*/,
+        void *data /*struct backend_enqueue_post_msg_param *prm*/);
+rstatus_t backend_event_add_post_msg(
+        struct backend_enqueue_post_msg_param *prm);
 
 /**.......................................................................
  * A generic stub for backend processing of requests.
@@ -236,6 +247,9 @@ swallow_response(struct context *ctx, struct conn* c_conn, struct conn* s_conn,
  * commands here.
  *
  * Test case is GET path.  Others are currently unhandled.
+ *
+ * TODO: handle DEL for redis as backend
+ * TODO: handle SET for redis as backend
  */
 bool
 process_frontend_rsp(struct context *ctx, struct conn *s_conn, struct msg* msg)
@@ -255,6 +269,59 @@ process_frontend_rsp(struct context *ctx, struct conn *s_conn, struct msg* msg)
     return false;
 }
 
+rstatus_t
+backend_enqueue_post_msg(void *elem /*struct msg *msg*/,
+        void *data /*struct backend_enqueue_post_msg_param *prm*/)
+{
+    struct msg *msg = (struct msg*)elem;
+    struct backend_enqueue_post_msg_param *prm =
+        (struct backend_enqueue_post_msg_param*)data;
+    struct context *ctx = prm->ctx;
+    struct conn *s_conn = prm->s_conn;
+    struct conn *c_conn = prm->c_conn;
+    struct msg* msgp = TAILQ_FIRST(&c_conn->omsg_q);
+    rstatus_t status = NC_OK;
+    ProtobufCBinaryData vclock;
+    ASSERT(msgp != NULL);
+    ASSERT(msg != NULL);
+
+    if (msgp->has_vclock) {
+        vclock = msgp->vclock;
+    } else {
+        vclock.len = 0;
+    }
+    msg->has_vclock = 1;
+    msg->vclock = vclock;
+
+    s_conn->dequeue_outq(ctx, s_conn, msgp);
+    c_conn->dequeue_outq(ctx, c_conn, msgp);
+
+    c_conn->enqueue_outq(ctx, c_conn, msg);
+    s_conn->enqueue_inq(ctx, s_conn, msg);
+
+    msg->noreply = 0;
+    s_conn->req_remap(s_conn, msg);
+
+    return status;
+}
+
+rstatus_t
+backend_event_add_post_msg(struct backend_enqueue_post_msg_param *prm)
+{
+    rstatus_t status = NC_OK;
+    struct context *ctx = prm->ctx;
+    struct conn *c_conn = prm->c_conn;
+
+    if (TAILQ_EMPTY(&c_conn->omsg_q)) {
+        if ((status = event_add_out(ctx->evb, c_conn)) != NC_OK) {
+            c_conn->err = errno;
+            return status;
+        }
+    }
+
+    return status;
+}
+
 /**.......................................................................
  * Process a response received from a backend server.
  */
@@ -267,7 +334,24 @@ process_backend_rsp(struct context *ctx, struct conn *s_conn, struct msg* msg)
 
     switch (msg->type) {
     case MSG_RSP_REDIS_BULK:
-        if (!msg_nil(msg)) {
+        if (pmsg->read_before_write) {
+            pmsg->has_vclock = msg->has_vclock;
+            pmsg->vclock = msg->vclock;
+
+            struct backend_enqueue_post_msg_param prmp;
+            prmp.ctx = ctx;
+            prmp.c_conn = c_conn;
+            prmp.s_conn = s_conn;
+
+            array_each(pmsg->msgs_post, backend_enqueue_post_msg, &prmp);
+            backend_event_add_post_msg(&prmp);
+
+            pmsg->swallow = 1;
+            pmsg->done = 1;
+
+           /* further processing needed, so return false  */
+           return false;
+        } else if (!msg_nil(msg)) {
             forward_response(ctx, c_conn, s_conn, pmsg, msg);
             add_set_msg(ctx, c_conn, msg);
         } else {
@@ -280,6 +364,21 @@ process_backend_rsp(struct context *ctx, struct conn *s_conn, struct msg* msg)
                 forward_response(ctx, c_conn, s_conn, pmsg, msg);
             }
         }
+        break;
+
+    case MSG_RSP_REDIS_STATUS:
+        forward_response(ctx, c_conn, s_conn, pmsg, msg);
+        add_pexpire_msg(ctx, c_conn, msg);
+        break;
+
+    case MSG_RSP_RIAK_INTEGER:
+        pmsg->integer += msg->integer;
+        pmsg->nfrag_done++;
+        if (pmsg->nfrag_done < pmsg->nfrag) {
+            break;
+        }
+        forward_response(ctx, c_conn, s_conn, pmsg, msg);
+        add_pexpire_msg(ctx, c_conn, msg);
         break;
 
     default:
@@ -316,6 +415,91 @@ add_set_msg(struct context *ctx, struct conn* c_conn, struct msg* msg)
     }
 
     return NC_ERROR;
+}
+
+/**.......................................................................
+ * Function add PEXPIRE message to the server's queue, extracting key
+ * name from the passed message
+ */
+rstatus_t
+add_pexpire_msg(struct context *ctx, struct conn* c_conn, struct msg* msg)
+{
+    ASSERT(msg != NULL);
+    ASSERT(msg->peer != NULL);
+    ASSERT(msg->peer->type == MSG_REQ_RIAK_DEL ||
+           msg->peer->type == MSG_REQ_RIAK_SET);
+
+    if (msg_nil(msg)) {
+        return NC_OK;
+    }
+
+    add_pexpire_msg_riak(ctx, c_conn, msg);
+
+    return NC_OK;
+}
+
+/**.......................................................................
+ * Function to add a PEXPIRE message to the server's queue, with explicit
+ * keyname and expiration time
+ */
+rstatus_t
+add_pexpire_msg_key(struct context *ctx, struct conn* c_conn, char* keyname,
+                    uint32_t keynamelen, uint32_t time)
+{
+    const char pexipire_begin_proto[] = "*3\r\n$7\r\npexpire\r\n$%u\r\n";
+    const char pexipire_finish_proto[] = "\r\n$%u\r\n%u\r\n";
+    uint32_t ntime_dig = ndig(time);
+    rstatus_t status;
+    struct conn* s_conn = server_pool_conn_frontend(ctx, c_conn->owner,
+                                                    (uint8_t*)keyname,
+                                                    keynamelen,
+                                                    NULL);
+
+    char pexipire_begin[sizeof(pexipire_begin_proto) - 2 + ndig(keynamelen)];
+    const uint32_t pexipire_begin_len = (uint32_t)sprintf(pexipire_begin,
+                                                          pexipire_begin_proto,
+                                                          keynamelen);
+    ASSERT(pexipire_begin_len == sizeof(pexipire_begin) - 1);
+
+    char pexipire_finish[sizeof(pexipire_finish_proto) - 4 + ndig(ntime_dig)
+                         + ntime_dig];
+    const uint32_t pexipire_finish_len = (uint32_t)sprintf(
+            pexipire_finish, pexipire_finish_proto, ntime_dig, time);
+    ASSERT(pexipire_finish_len == sizeof(pexipire_finish) - 1);
+
+    struct msg* msg = msg_get(c_conn, true);
+    if (msg == NULL) {
+        c_conn->err = errno;
+        return NC_ENOMEM;
+    }
+
+    if ((status = msg_copy_char(msg, pexipire_begin, sizeof(pexipire_begin) - 1)) != NC_OK) {
+        msg_put(msg);
+        return status;
+    }
+
+    if ((status = msg_copy_char(msg, keyname, keynamelen)) != NC_OK) {
+        msg_put(msg);
+        return status;
+    }
+
+    if ((status = msg_copy_char(msg, pexipire_finish,
+                                sizeof(pexipire_finish) - 1))
+        != NC_OK) {
+        msg_put(msg);
+        return status;
+    }
+
+    msg->swallow = 1;
+
+    if (TAILQ_EMPTY(&s_conn->imsg_q)) {
+        event_add_out(ctx->evb, s_conn);
+    }
+
+    s_conn->enqueue_inq(ctx, s_conn, msg);
+    s_conn->need_auth = 0;
+
+    return NC_OK;
 }
 
 /**.......................................................................

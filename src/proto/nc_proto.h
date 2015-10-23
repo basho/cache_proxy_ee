@@ -181,9 +181,12 @@ rstatus_t memcache_repack(struct msg* r);
 rstatus_t add_set_msg_redis(struct context *ctx, struct conn* c_conn, struct msg* msg);
 
 rstatus_t add_set_msg_riak(struct context *ctx, struct conn* c_conn, struct msg* msg);
+rstatus_t add_pexpire_msg_riak(struct context *ctx, struct conn* c_conn, struct msg* msg);
 
 rstatus_t add_set_msg_key(struct context *ctx, struct conn* c_conn, char* keyname,
                           struct msg_pos* keyval_start_pos, uint32_t keyvallen);
+rstatus_t add_pexpire_msg_key(struct context *ctx, struct conn* c_conn, char* keyname,
+                              uint32_t keynamelen, uint32_t time);
 
 rstatus_t redis_get_next_string(struct msg* msg, struct msg_pos* init_pos, struct msg_pos* start_pos, size_t* len);
 

@@ -485,13 +485,16 @@ _core_log_msg_queues_msg(struct msg* msg) {
     struct msg* pmsg = msg->peer;
     struct string *msg_type;
     msg_type = msg_type_string(msg->type);
-    log_debug(LOG_DEBUG, "****** Message id: %d, type: %.*s, request: %d",
-            msg->id, msg_type->len, msg_type->data, msg->request);
+    log_debug(LOG_DEBUG, "****** Message id: %d, type: %.*s, request: %d,"
+            " rbw: %u, hvclock: %d",
+            msg->id, msg_type->len, msg_type->data, msg->request,
+            msg->read_before_write, msg->has_vclock);
     if (pmsg != NULL) {
         msg_type = msg_type_string(pmsg->type);
         log_debug(LOG_DEBUG, "******* Peer Message id: %d, type: %.*s,"
-                " request: %d",
-                pmsg->id, msg_type->len, msg_type->data, pmsg->request);
+                " request: %d, rbw: %u, hvclock: %d",
+                pmsg->id, msg_type->len, msg_type->data, pmsg->request,
+                pmsg->read_before_write, pmsg->has_vclock);
     }
 }
 

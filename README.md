@@ -1,4 +1,4 @@
-# cache_proxy (BDP Cache Proxy Open Source Software (OSS) Edition) #
+# cache_proxy_ee (BDP Cache Proxy Enterprise Edition) #
 ## Purpose ##
 BDP Cache Proxy, aka **nutcracker'** (until someone wins the contest to name the service) is a
 fast and lightweight proxy for [redis](http://redis.io/) protocol. It was built primarily to
@@ -37,8 +37,8 @@ make install
 ## Build ##
 To build BDP Cache Proxy from source with _debug logs enabled_ and _assertions enabled_:
 
-    $ git clone git@github.com:basho/cache_proxy.git
-    $ cd cache_proxy
+    $ git clone git@github.com:basho/cache_proxy_ee.git
+    $ cd cache_proxy_ee
     $ autoreconf -fvi
     $ ./configure --enable-debug=full --with-protobuf-c=/usr/local
     $ make
@@ -193,10 +193,10 @@ If you are deploying BDP Cache Proxy in production, you might consider reading t
 
 Have a bug or a question? Please create an issue here on GitHub!
 
-https://github.com/basho/cache_proxy/issues
+https://github.com/basho/cache_proxy_ee/issues
 
 ## Contribution ##
-Thank you to all of our [contributors](https://github.com/basho/cache_proxy/graphs/contributors)!
+Thank you to all of our [contributors](https://github.com/basho/cache_proxy_ee/graphs/contributors)!
 
 ## License
 

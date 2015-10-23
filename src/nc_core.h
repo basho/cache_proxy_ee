@@ -62,6 +62,7 @@
 #define NC_ERROR    -1
 #define NC_EAGAIN   -2
 #define NC_ENOMEM   -3
+#define NC_EBADREQ  -4
 
 /* reserved fds for std streams, log, stats fd, epoll etc. */
 #define RESERVED_FDS 32
