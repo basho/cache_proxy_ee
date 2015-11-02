@@ -943,6 +943,9 @@ should_forward_req_to_backend(struct conn *c_conn, struct msg* msg)
     case MSG_REQ_REDIS_DEL:
         return true;
 
+    case MSG_REQ_REDIS_SADD:
+        return true;
+
     default:
         break;
     }

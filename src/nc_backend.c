@@ -426,8 +426,6 @@ add_pexpire_msg(struct context *ctx, struct conn* c_conn, struct msg* msg)
 {
     ASSERT(msg != NULL);
     ASSERT(msg->peer != NULL);
-    ASSERT(msg->peer->type == MSG_REQ_RIAK_DEL ||
-           msg->peer->type == MSG_REQ_RIAK_SET);
 
     if (msg_nil(msg)) {
         return NC_OK;

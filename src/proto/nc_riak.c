@@ -22,49 +22,8 @@
 
 #include <nc_core.h>
 #include <nc_proto.h>
+#include <nc_riak.h>
 
-#include <riak_kv.pb-c.h>
-
-#define CONF_UNSET_NUM -1
-
-typedef enum {
-    REQ_RIAK_GET = 9,
-    REQ_RIAK_PUT = 11,
-    REQ_RIAK_DEL = 13,
-} riak_req_t;
-
-typedef enum {
-    RSP_RIAK_UNKNOWN = 0x0,
-    RSP_RIAK_GET = 10,
-    RSP_RIAK_PUT = 12,
-    RSP_RIAK_DEL = 14,
-} riak_rsp_t;
-
-void parse_pb_get_req(struct msg *r, uint32_t* len, uint8_t* msgid, RpbGetReq** req);
-void parse_pb_put_req(struct msg *r, uint32_t* len, uint8_t* msgid, RpbPutReq** req);
-
-bool get_pb_msglen(struct msg* r, uint32_t* len, uint8_t* msgid);
-bool get_pb_mbuflen(struct mbuf* mbuf, uint32_t* len, uint8_t* msgid);
-
-rstatus_t encode_pb_get_req(struct msg* r, struct conn* s_conn, msg_type_t type);
-rstatus_t _encode_pb_get_req(struct msg* r, struct conn* s_conn, msg_type_t type,
-                   unsigned read_before_write);
-rstatus_t encode_pb_put_req(struct msg* r, struct conn* s_conn, msg_type_t type);
-rstatus_t encode_pb_del_req(struct msg* r, struct conn* s_conn, msg_type_t type);
-
-RpbGetResp* extract_get_rsp(struct msg* r, uint32_t len, uint8_t* msgid);
-RpbPutResp* extract_put_rsp(struct msg* r, uint32_t len, uint8_t* msgid);
-bool extract_del_rsp(struct msg* r, uint32_t len, uint8_t* msgid);
-
-rstatus_t repack_get_rsp(struct msg* r, RpbGetResp* rpbresp);
-
-/*
- * Sibling resolution functions
- */
-
-unsigned choose_sibling(RpbGetResp* rpbresp);
-unsigned choose_last_modified_sibling(RpbGetResp* rpbresp);
-unsigned choose_random_sibling(unsigned nSib);
 
 /**.......................................................................
  * Stub to parse a request received from a Riak server.  We don't
@@ -390,7 +349,12 @@ riak_req_remap(struct conn* conn, struct msg* msg)
             return status;
         }
         break;
+    case MSG_REQ_REDIS_SADD:
+        if ((status = encode_pb_sadd_req(msg, conn, MSG_REQ_RIAK_SADD)) != NC_OK) {
+            return status;
+        }
 
+    	break;
     default:
         return NC_ERROR;
     }
@@ -483,13 +447,12 @@ extract_bucket_key_value(struct msg *r, ProtobufCBinaryData *bucket,
     return NC_OK;
 }
 
-typedef size_t (*pack_func)(const void *message, uint8_t *out);
 /**.......................................................................
  * Pack the message into our mbufs
  */
 rstatus_t
 pack_message(struct msg *r, msg_type_t type, uint32_t msglen, uint8_t reqid,
-             pack_func func, const void *message, uint32_t bucketlen)
+             pb_pack_func func, const void *message, uint32_t bucketlen)
 {
     rstatus_t status;
     uint32_t netlen = htonl(msglen + 1);
@@ -637,7 +600,7 @@ _encode_pb_get_req(struct msg* r, struct conn* s_conn, msg_type_t type,
 
     r->read_before_write = read_before_write;
 
-    status = pack_message(r, type, rpb_get_req__get_packed_size(&req), REQ_RIAK_GET, (pack_func)rpb_get_req__pack, &req, req.bucket.len);
+    status = pack_message(r, type, rpb_get_req__get_packed_size(&req), REQ_RIAK_GET, (pb_pack_func)rpb_get_req__pack, &req, req.bucket.len);
     nc_free(req.bucket.data);
 
     return status;
@@ -707,7 +670,7 @@ encode_pb_put_req(struct msg* r, struct conn* s_conn, msg_type_t type)
         req.vclock = r->vclock;
     }
 
-    status = pack_message(r, type, rpb_put_req__get_packed_size(&req), REQ_RIAK_PUT, (pack_func)rpb_put_req__pack, &req, req.bucket.len);
+    status = pack_message(r, type, rpb_put_req__get_packed_size(&req), REQ_RIAK_PUT, (pb_pack_func)rpb_put_req__pack, &req, req.bucket.len);
     nc_free(req.bucket.data);
     nc_free(req.content->value.data);
     return status;
@@ -773,7 +736,7 @@ encode_pb_del_req(struct msg* r, struct conn* s_conn, msg_type_t type)
             STAILQ_INSERT_HEAD(&r->mhdr, mbuf, next);
 
             status = pack_message(r, type, rpb_del_req__get_packed_size(&req),
-                                  REQ_RIAK_DEL, (pack_func)rpb_del_req__pack,
+                                  REQ_RIAK_DEL, (pb_pack_func)rpb_del_req__pack,
                                   &req, req.bucket.len);
             keys_number++;
         } else {
