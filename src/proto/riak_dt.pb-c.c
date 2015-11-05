@@ -6,7 +6,7 @@
 #define PROTOBUF_C__NO_DEPRECATED
 #endif
 
-#include "riak_dt.pb-c.h"
+#include <riak_dt.pb-c.h>
 void   map_field__init
                      (MapField         *message)
 {

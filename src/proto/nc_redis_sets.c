@@ -17,19 +17,23 @@ encode_pb_sadd_req(struct msg* r, struct conn* s_conn, msg_type_t type)
 
     rstatus_t status;
 
-    RpbPutReq req = RPB_PUT_REQ__INIT;
-    //SetOp prereq = SET_OP__INIT;
+    DtUpdateReq req = DT_UPDATE_REQ__INIT;
+    DtOp op = DT_OP__INIT;
+    SetOp setop = SET_OP__INIT;
+    ProtobufCBinaryData value;
 
-    //prereq.
+    req.op = &op;
+    op.set_op = &setop;
+    setop.n_adds = 1;
+    setop.adds = &value;
 
-    //req.has_key = 1;
-
-    RpbContent content = RPB_CONTENT__INIT;
-    req.content = &content;
+    req.has_key = 1;
+    req.has_n_val = 1;
+    req.n_val = 1;
 
     struct msg_pos keyname_start_pos = msg_pos_init();
     if ((status = extract_bucket_key_value(r, &req.bucket, &req.key,
-                    &req.content[0].value, &keyname_start_pos, false))
+                    &value, &keyname_start_pos, false))
             != NC_OK) {
         return status;
     }
@@ -63,24 +67,10 @@ encode_pb_sadd_req(struct msg* r, struct conn* s_conn, msg_type_t type)
         req.sloppy_quorum = opt->riak_sloppy_quorum;
     }
 
-    if (req.content != NULL) {
-        req.content[0].has_content_type = (protobuf_c_boolean)1;
-        req.content[0].content_type.len = 10; /*<< strlen("text/plain")*/
-        req.content[0].content_type.data = (uint8_t*)"text/plain";
-    }
-
-    /* Set the vclock, otherwise causing "sibling explosion" */
-    if (r->has_vclock && r->vclock.len > 0) {
-        req.has_vclock = (protobuf_c_boolean)1;
-        req.vclock = r->vclock;
-    }
-
-    req.has_type = 1;
     req.type.data = (uint8_t *)DATA_TYPE_SETS;
     req.type.len = sizeof(DATA_TYPE_SETS) - 1;
 
-    status = pack_message(r, type, rpb_put_req__get_packed_size(&req), REQ_RIAK_PUT, (pb_pack_func)rpb_put_req__pack, &req, req.bucket.len);
+    status = pack_message(r, type, dt_update_req__get_packed_size(&req), REQ_RIAK_DTUPDATE, (pb_pack_func)dt_update_req__pack, &req, req.bucket.len);
     nc_free(req.bucket.data);
-    nc_free(req.content->value.data);
     return status;
 }

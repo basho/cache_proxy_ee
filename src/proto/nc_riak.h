@@ -10,6 +10,7 @@ typedef enum {
     REQ_RIAK_GET = 9,
     REQ_RIAK_PUT = 11,
     REQ_RIAK_DEL = 13,
+    REQ_RIAK_DTUPDATE = 82
 } riak_req_t;
 
 typedef enum {
@@ -17,6 +18,7 @@ typedef enum {
     RSP_RIAK_GET = 10,
     RSP_RIAK_PUT = 12,
     RSP_RIAK_DEL = 14,
+    RSP_RIAK_DTUPDATE = 83
 } riak_rsp_t;
 
 typedef size_t (*pb_pack_func)(const void *message, uint8_t *out);
