@@ -10,7 +10,7 @@ typedef enum {
     REQ_RIAK_GET = 9,
     REQ_RIAK_PUT = 11,
     REQ_RIAK_DEL = 13,
-    REQ_RIAK_DTUPDATE = 82
+    REQ_RIAK_DT_UPDATE = 82
 } riak_req_t;
 
 typedef enum {
@@ -18,10 +18,11 @@ typedef enum {
     RSP_RIAK_GET = 10,
     RSP_RIAK_PUT = 12,
     RSP_RIAK_DEL = 14,
-    RSP_RIAK_DTUPDATE = 83
+    RSP_RIAK_DT_UPDATE = 83
 } riak_rsp_t;
 
 typedef size_t (*pb_pack_func)(const void *message, uint8_t *out);
+typedef void* (*unpack_func)(ProtobufCAllocator *allocator, size_t len, const uint8_t *data);
 
 void parse_pb_get_req(struct msg *r, uint32_t* len, uint8_t* msgid, RpbGetReq** req);
 void parse_pb_put_req(struct msg *r, uint32_t* len, uint8_t* msgid, RpbPutReq** req);
@@ -39,9 +40,14 @@ rstatus_t encode_pb_sadd_req(struct msg* r, struct conn* s_conn, msg_type_t type
 RpbGetResp* extract_get_rsp(struct msg* r, uint32_t len, uint8_t* msgid);
 RpbPutResp* extract_put_rsp(struct msg* r, uint32_t len, uint8_t* msgid);
 bool extract_del_rsp(struct msg* r, uint32_t len, uint8_t* msgid);
+DtUpdateResp* extract_dt_update_rsp(struct msg* r, uint32_t len, uint8_t* msgid);
 
 rstatus_t repack_get_rsp(struct msg* r, RpbGetResp* rpbresp);
+rstatus_t repack_dt_update_resp(struct msg* r, DtUpdateResp* dtresp);
 
+
+bool extract_rsp(struct msg* r, uint32_t len, uint8_t* msgid, unpack_func func,
+            void ** rpbresp);
 bool extract_del_rsp(struct msg* r, uint32_t len, uint8_t* msgid);
 rstatus_t extract_bucket_key_value(struct msg *r, ProtobufCBinaryData *bucket,
                                    ProtobufCBinaryData *key,

@@ -105,6 +105,8 @@ riak_parse_rsp(struct msg *r)
         break;
     case RSP_RIAK_PUT:
         break;
+    case RSP_RIAK_DT_UPDATE:
+        break;
     case RSP_RIAK_DEL:
         /* DEL doesn't have response */
         return;
@@ -385,45 +387,48 @@ extract_bucket_key_value(struct msg *r, ProtobufCBinaryData *bucket,
         }
     }
 
-    if ((status = redis_get_next_string(r, keyname_start_pos, keyname_start_pos,
-                                        &keynamelen))
-        != NC_OK) {
-        return status;
-    }
+    if(bucket) {
+        if ((status = redis_get_next_string(r, keyname_start_pos, keyname_start_pos,
+                                            &keynamelen))
+            != NC_OK) {
+            return status;
+        }
 
-    bucket->data = nc_alloc(keynamelen + 1);
-    bucket->data[keynamelen] = 0;
-    if (bucket->data == NULL) {
-        return NC_ENOMEM;
-    }
+        bucket->data = nc_alloc(keynamelen + 1);
+        bucket->data[keynamelen] = 0;
+        if (bucket->data == NULL) {
+            return NC_ENOMEM;
+        }
 
-    if ((status = msg_extract_from_pos_char((char *)bucket->data,
-                                            keyname_start_pos, keynamelen))
-        != NC_OK) {
-        nc_free(bucket->data);
-
-        /* no bucket, bad request */
-        return NC_EBADREQ;
-    }
-
-    uint8_t* sep = bucket->data + keynamelen - 1;
-    while (sep >= bucket->data) {
-        if (*sep == ':')
-            break;
-        sep--;
-    }
-    if (sep < bucket->data) {
-        if (allow_empty_bucket == false) {
+        if ((status = msg_extract_from_pos_char((char *)bucket->data,
+                                                keyname_start_pos, keynamelen))
+            != NC_OK) {
             nc_free(bucket->data);
+
+            /* no bucket, bad request */
             return NC_EBADREQ;
         }
-        bucket->len = 0;
-    } else {
-        bucket->len = sep - bucket->data;
-    }
+        msg_offset_from(keyname_start_pos, keynamelen, keyname_start_pos);
 
-    key->data = sep + 1;
-    key->len = keynamelen - (sep - bucket->data) - 1;
+        uint8_t* sep = bucket->data + keynamelen - 1;
+        while (sep >= bucket->data) {
+            if (*sep == ':')
+                break;
+            sep--;
+        }
+        if (sep < bucket->data) {
+            if (allow_empty_bucket == false) {
+                nc_free(bucket->data);
+                return NC_EBADREQ;
+            }
+            bucket->len = 0;
+        } else {
+            bucket->len = sep - bucket->data;
+        }
+
+        key->data = sep + 1;
+        key->len = keynamelen - (sep - bucket->data) - 1;
+    }
 
     if (value) {
         struct msg_pos keyval_start_pos = msg_pos_init();
@@ -442,6 +447,7 @@ extract_bucket_key_value(struct msg *r, ProtobufCBinaryData *bucket,
             nc_free(value->data);
             return status;
         }
+        msg_offset_from(keyname_start_pos, value->len, keyname_start_pos);
     }
 
     return NC_OK;
@@ -917,8 +923,6 @@ add_set_msg_riak(struct context *ctx, struct conn* c_conn, struct msg* msg)
     return add_set_msg_key(ctx, c_conn, keyname, &keyval_start_pos, keyvallen);
 }
 
-typedef void*
-(*unpack_func)(ProtobufCAllocator *allocator, size_t len, const uint8_t *data);
 /**.......................................................................
  * Extract a PB-encoded response out of the message buffer
  */
@@ -1139,6 +1143,7 @@ riak_repack(struct msg* r)
 
     RpbGetResp* rpb_get_resp = NULL;
     RpbPutResp* rpb_put_resp = NULL;
+    DtUpdateResp* dt_update_resp = NULL;
     uint32_t len = 0;
     uint8_t msgid = RSP_RIAK_UNKNOWN;
     if (!get_pb_msglen(r, &len, &msgid)) {
@@ -1196,6 +1201,21 @@ riak_repack(struct msg* r)
             r->result = MSG_PARSE_ERROR;
         }
     }
+        break;
+
+    case RSP_RIAK_DT_UPDATE:
+        dt_update_resp = extract_dt_update_rsp(r, len, &msgid);
+
+        if (dt_update_resp == NULL) {
+            r->result = MSG_PARSE_ERROR;
+            break;
+        }
+
+        if (repack_dt_update_resp(r, dt_update_resp) != NC_OK) {
+            r->result = MSG_PARSE_ERROR;
+        }
+
+        dt_update_resp__free_unpacked(dt_update_resp, NULL);
         break;
 
     default:
