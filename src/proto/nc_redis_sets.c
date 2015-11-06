@@ -4,13 +4,13 @@
 #include <nc_riak.h>
 
 static const char DATA_TYPE_SETS[] = "sets";
+typedef enum {
+    SADD,
+    SREM
+} SetOpAction;
 
-/**.......................................................................
- * Take a Redis SADD request, and remap it to a PB message suitable for
- * sending to riak.
- */
-rstatus_t
-encode_pb_sadd_req(struct msg* r, struct conn* s_conn, msg_type_t type)
+static rstatus_t
+encode_pb_setop_req(struct msg* r, struct conn* s_conn, msg_type_t type, SetOpAction act)
 {
     ASSERT(r != NULL);
     ASSERT(s_conn != NULL);
@@ -31,9 +31,20 @@ encode_pb_sadd_req(struct msg* r, struct conn* s_conn, msg_type_t type)
     req.has_key = 1;
     req.op = &op;
     op.set_op = &setop;
-    setop.n_adds = value_count;
-    setop.adds = values;
 
+    switch (act) {
+    case SADD:
+        setop.n_adds = value_count;
+        setop.adds = values;
+    break;
+    case SREM:
+        setop.n_removes = value_count;
+        setop.removes = values;
+    break;
+    default:
+        NOT_REACHED();
+        return NC_ERROR;
+    }
 
     ProtobufCBinaryData *bucket = &req.bucket;
     ProtobufCBinaryData *key = &req.key;
@@ -102,6 +113,26 @@ encode_pb_sadd_req(struct msg* r, struct conn* s_conn, msg_type_t type)
         nc_free(values[i].data);
     }
     return status;
+}
+
+/**.......................................................................
+ * Take a Redis SADD request, and remap it to a PB message suitable for
+ * sending to riak.
+ */
+rstatus_t
+encode_pb_sadd_req(struct msg* r, struct conn* s_conn, msg_type_t type)
+{
+    return encode_pb_setop_req(r, s_conn, type, SADD);
+}
+
+/**.......................................................................
+ * Take a Redis SREM request, and remap it to a PB message suitable for
+ * sending to riak.
+ */
+rstatus_t
+encode_pb_srem_req(struct msg* r, struct conn* s_conn, msg_type_t type)
+{
+    return encode_pb_setop_req(r, s_conn, type, SREM);
 }
 
 DtUpdateResp*

@@ -36,6 +36,7 @@ rstatus_t _encode_pb_get_req(struct msg* r, struct conn* s_conn, msg_type_t type
 rstatus_t encode_pb_put_req(struct msg* r, struct conn* s_conn, msg_type_t type);
 rstatus_t encode_pb_del_req(struct msg* r, struct conn* s_conn, msg_type_t type);
 rstatus_t encode_pb_sadd_req(struct msg* r, struct conn* s_conn, msg_type_t type);
+rstatus_t encode_pb_srem_req(struct msg* r, struct conn* s_conn, msg_type_t type);
 
 RpbGetResp* extract_get_rsp(struct msg* r, uint32_t len, uint8_t* msgid);
 RpbPutResp* extract_put_rsp(struct msg* r, uint32_t len, uint8_t* msgid);

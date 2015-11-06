@@ -195,6 +195,7 @@ typedef enum msg_parse_result {
     ACTION( REQ_RIAK_SET )                                                                          \
     ACTION( REQ_RIAK_DEL )                                                                          \
     ACTION( REQ_RIAK_SADD )                                                                         \
+    ACTION( REQ_RIAK_SREM )                                                                         \
     ACTION( RSP_RIAK_PING )                                                                         \
     ACTION( RSP_RIAK_KV )                                                                           \
     ACTION( RSP_RIAK_INTEGER )                                                                      \

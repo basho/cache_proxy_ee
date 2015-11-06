@@ -357,6 +357,12 @@ riak_req_remap(struct conn* conn, struct msg* msg)
         }
 
     	break;
+    case MSG_REQ_REDIS_SREM:
+        if ((status = encode_pb_srem_req(msg, conn, MSG_REQ_RIAK_SREM)) != NC_OK) {
+            return status;
+        }
+
+        break;
     default:
         return NC_ERROR;
     }
@@ -408,7 +414,6 @@ extract_bucket_key_value(struct msg *r, ProtobufCBinaryData *bucket,
             /* no bucket, bad request */
             return NC_EBADREQ;
         }
-        msg_offset_from(keyname_start_pos, keynamelen, keyname_start_pos);
 
         uint8_t* sep = bucket->data + keynamelen - 1;
         while (sep >= bucket->data) {
@@ -431,9 +436,8 @@ extract_bucket_key_value(struct msg *r, ProtobufCBinaryData *bucket,
     }
 
     if (value) {
-        struct msg_pos keyval_start_pos = msg_pos_init();
         if ((status = redis_get_next_string(r, keyname_start_pos,
-                                            &keyval_start_pos, &value->len))
+                                            keyname_start_pos, &value->len))
             != NC_OK) {
             return status;
         }
@@ -442,12 +446,11 @@ extract_bucket_key_value(struct msg *r, ProtobufCBinaryData *bucket,
         value->data[value->len] = 0;
 
         if ((status = msg_extract_from_pos_char((char*)value->data,
-                                                &keyval_start_pos, value->len))
+                                                keyname_start_pos, value->len))
             != NC_OK) {
             nc_free(value->data);
             return status;
         }
-        msg_offset_from(keyname_start_pos, value->len, keyname_start_pos);
     }
 
     return NC_OK;
