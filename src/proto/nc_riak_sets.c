@@ -1,7 +1,7 @@
 #include <nc_core.h>
 #include <nc_proto.h>
 
-#include <nc_riak.h>
+#include <nc_riak_private.h>
 
 static const char DATA_TYPE_SETS[] = "sets";
 typedef enum {
