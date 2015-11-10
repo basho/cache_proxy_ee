@@ -401,10 +401,10 @@ extract_bucket_key_value(struct msg *r, ProtobufCBinaryData *bucket,
         }
 
         bucket->data = nc_alloc(keynamelen + 1);
-        bucket->data[keynamelen] = 0;
         if (bucket->data == NULL) {
             return NC_ENOMEM;
         }
+        bucket->data[keynamelen] = 0;
 
         if ((status = msg_extract_from_pos_char((char *)bucket->data,
                                                 keyname_start_pos, keynamelen))
@@ -443,6 +443,9 @@ extract_bucket_key_value(struct msg *r, ProtobufCBinaryData *bucket,
         }
 
         value->data = nc_alloc(value->len + 1);
+        if (value->data == NULL) {
+            return NC_ENOMEM;
+        }
         value->data[value->len] = 0;
 
         if ((status = msg_extract_from_pos_char((char*)value->data,

@@ -53,7 +53,7 @@ encode_pb_setop_req(struct msg* r, struct conn* s_conn, msg_type_t type, SetOpAc
     struct msg_pos keyname_start_pos = msg_pos_init();
     while (value_num < value_count) {
         status = extract_bucket_key_value(r, bucket, key, &values[value_num],
-                                          &keyname_start_pos, false);
+                                          &keyname_start_pos, true);
         if(status != NC_OK)
             break;
         if(bucket) {
@@ -62,9 +62,8 @@ encode_pb_setop_req(struct msg* r, struct conn* s_conn, msg_type_t type, SetOpAc
             if (req.bucket.len <= 0) {
                 // if no bucket specified, return it back to frontend
                 nc_free(req.bucket.data);
-                nc_free(req.key.data);
                 nc_free(values[value_num].data);
-                return NC_EAGAIN;
+                return NC_EBADREQ;
             }
         }
         value_num++;
