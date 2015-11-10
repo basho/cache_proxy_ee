@@ -535,36 +535,21 @@ msg_empty(struct msg *msg)
 bool 
 msg_nil(struct msg *msg)
 {
-    struct mbuf *mbuf;
-    bool matches_nil;
-
+    const struct mbuf *mbuf = STAILQ_FIRST(&msg->mhdr);
     /* applies only to redis replies */
-    matches_nil = false;
     if (msg->type == MSG_RSP_REDIS_BULK) {
-        STAILQ_FOREACH(mbuf, &msg->mhdr, next) {
-            uint8_t nil[5] = {0x24, 0x2d, 0x31, 0x0d, 0x0a};
-            uint8_t *p, *q, cur;
-            long int len;
-
-            p = mbuf->start;
-            q = mbuf->last;
-            len = q - p;
-
-            /* dead-simple memory comparison of 5-byte responses against
-             * the value redis returns for nils */
-            if (len == 5) {
-                matches_nil = true;
-                for (cur=0; cur<5; ++cur) {
-                    if (*(p+cur) != *(nil+cur)) {
-                        matches_nil = false;
-                        break;
-                    }
-                }
-            }
+        if (mbuf->last - mbuf->start == 5) {
+            return str5cmp(mbuf->start, 0x24, 0x2d, 0x31, 0x0d, 0x0a);
         }
+    } else if (msg->type == MSG_RSP_REDIS_MULTIBULK) {
+        if (mbuf->last - mbuf->start == 4) {
+            return str4cmp(mbuf->start, 0x2a, 0x30, 0x0d, 0x0a);
+        }
+    } else if (msg->type == MSG_RSP_REDIS_INTEGER) {
+        return msg->integer == 0;
     }
 
-    return matches_nil;
+    return false;
 }
 
 uint32_t
