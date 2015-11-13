@@ -291,6 +291,7 @@ struct msg {
     unsigned             read_before_write:1; /* read before write to get vclock  */
     protobuf_c_boolean   has_vclock;      /* riak vclock fields */
     ProtobufCBinaryData  vclock;          /* riak vclock fields */
+    ProtobufCBinaryData  stored_arg;      /* redis arguments storage for some commands*/
 };
 
 struct msg_pos {
@@ -410,5 +411,7 @@ void msg_get_printable(struct msg* msg, char* buf);
 const uint8_t* msg_key0(struct msg* req, size_t* bucket_len, size_t* key_len);
 
 void msg_set_keypos(struct msg* req, uint32_t keyn, int start_offset, int len, size_t bucket_len);
+
+void msg_free_stored_arg(struct msg* msg);
 
 #endif

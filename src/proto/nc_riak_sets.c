@@ -138,69 +138,73 @@ rstatus_t
 encode_pb_smembers_req(struct msg* r, struct conn* s_conn, msg_type_t type)
 {
     ASSERT(r != NULL);
-        ASSERT(s_conn != NULL);
+    ASSERT(s_conn != NULL);
 
-        rstatus_t status;
+    rstatus_t status;
 
-        DtFetchReq req = DT_FETCH_REQ__INIT;
-        struct msg_pos keyname_start_pos = msg_pos_init();
+    DtFetchReq req = DT_FETCH_REQ__INIT;
+    struct msg_pos keyname_start_pos = msg_pos_init();
 
-        if ((status = extract_bucket_key_value(r, &req.bucket, &req.key, NULL,
-                                               &keyname_start_pos, false))
-            != NC_OK) {
-            return status;
-        }
+    msg_free_stored_arg(r);
 
-        struct server* server = (struct server*)(s_conn->owner);
-        const struct server_pool* pool = (struct server_pool*)(server->owner);
-        const struct backend_opt* opt = &pool->backend_opt;
-
-        req.has_r = (opt->riak_r != CONF_UNSET_NUM);
-        if (req.has_r) {
-            req.r = opt->riak_r;
-        }
-
-        req.has_pr = (opt->riak_pr != CONF_UNSET_NUM);
-        if (req.has_pr) {
-            req.pr = opt->riak_pr;
-        }
-
-        req.has_n_val = (opt->riak_n != CONF_UNSET_NUM);
-        if (req.has_n_val) {
-            req.n_val = opt->riak_n;
-        }
-
-        if (opt->riak_basic_quorum != CONF_UNSET_NUM) {
-            req.has_basic_quorum = true;
-            req.basic_quorum = opt->riak_basic_quorum;
-        } else {
-            req.has_basic_quorum = true;
-            req.basic_quorum = 1;
-        }
-
-        req.has_sloppy_quorum =
-                (opt->riak_sloppy_quorum != CONF_UNSET_NUM);
-        if (req.has_sloppy_quorum) {
-            req.sloppy_quorum = opt->riak_sloppy_quorum;
-        }
-
-        req.has_notfound_ok = (opt->riak_notfound_ok != CONF_UNSET_NUM);
-        if (req.has_notfound_ok) {
-            req.notfound_ok = opt->riak_notfound_ok;
-        }
-
-        req.has_timeout = (opt->riak_timeout != CONF_UNSET_NUM);
-        if (req.has_timeout) {
-            req.timeout = opt->riak_timeout;
-        }
-
-        req.type.data = (uint8_t *)DATA_TYPE_SETS;
-        req.type.len = sizeof(DATA_TYPE_SETS) - 1;
-
-        status = pack_message(r, type, dt_fetch_req__get_packed_size(&req), REQ_RIAK_DT_FETCH, (pb_pack_func)dt_fetch_req__pack, &req, req.bucket.len);
-        nc_free(req.bucket.data);
-
+    status = extract_bucket_key_value( r, &req.bucket, &req.key,
+            (type == MSG_REQ_RIAK_SISMEMBER) ? &r->stored_arg : NULL,
+            &keyname_start_pos, false);
+    if (status != NC_OK) {
         return status;
+    }
+
+    struct server* server = (struct server*)(s_conn->owner);
+    const struct server_pool* pool = (struct server_pool*)(server->owner);
+    const struct backend_opt* opt = &pool->backend_opt;
+
+    req.has_r = (opt->riak_r != CONF_UNSET_NUM);
+    if (req.has_r) {
+        req.r = opt->riak_r;
+    }
+
+    req.has_pr = (opt->riak_pr != CONF_UNSET_NUM);
+    if (req.has_pr) {
+        req.pr = opt->riak_pr;
+    }
+
+    req.has_n_val = (opt->riak_n != CONF_UNSET_NUM);
+    if (req.has_n_val) {
+        req.n_val = opt->riak_n;
+    }
+
+    if (opt->riak_basic_quorum != CONF_UNSET_NUM) {
+        req.has_basic_quorum = true;
+        req.basic_quorum = opt->riak_basic_quorum;
+    } else {
+        req.has_basic_quorum = true;
+        req.basic_quorum = 1;
+    }
+
+    req.has_sloppy_quorum = (opt->riak_sloppy_quorum != CONF_UNSET_NUM);
+    if (req.has_sloppy_quorum) {
+        req.sloppy_quorum = opt->riak_sloppy_quorum;
+    }
+
+    req.has_notfound_ok = (opt->riak_notfound_ok != CONF_UNSET_NUM);
+    if (req.has_notfound_ok) {
+        req.notfound_ok = opt->riak_notfound_ok;
+    }
+
+    req.has_timeout = (opt->riak_timeout != CONF_UNSET_NUM);
+    if (req.has_timeout) {
+        req.timeout = opt->riak_timeout;
+    }
+
+    req.type.data = (uint8_t *)DATA_TYPE_SETS;
+    req.type.len = sizeof(DATA_TYPE_SETS) - 1;
+
+    status = pack_message(r, type, dt_fetch_req__get_packed_size(&req),
+                          REQ_RIAK_DT_FETCH, (pb_pack_func)dt_fetch_req__pack,
+                          &req, req.bucket.len);
+    nc_free(req.bucket.data);
+
+    return status;
 }
 
 rstatus_t
@@ -429,19 +433,17 @@ repack_dt_fetch_resp(struct msg* r, DtFetchResp* dtresp)
     case MSG_REQ_RIAK_SISMEMBER:
     {
         uint32_t result = 0;
-// TODO pass value somehow
-//        uint32_t i;
-//        for(i = 0; i < dtresp->value->n_set_value; i++) {
-//            if(dtresp->value->set_value[i].len == value.len) {
-//                if(strncmp((char*)dtresp->value->set_value[i].data,
-//                           (char*)value.data, value.len) == 0) {
-//                    result = 1;
-//                    break;
-//                }
-//            }
-//        }
-//
-//        nc_free(value.data);
+        uint32_t i;
+        for(i = 0; i < values_count; i++) {
+            if(values[i].len == pmsg->stored_arg.len) {
+                if(strncmp((char*)values[i].data, (char*)pmsg->stored_arg.data,
+                           pmsg->stored_arg.len) == 0) {
+                    result = 1;
+                    break;
+                }
+            }
+        }
+        msg_free_stored_arg(r);
 
         if ((status = msg_prepend_format(r, ":%d\r\n", result)) != NC_OK) {
             return status;

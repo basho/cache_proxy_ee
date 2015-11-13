@@ -300,6 +300,8 @@ done:
     msg->swallow = 0;
     msg->redis = 0;
     msg->has_vclock = 0;
+    msg->stored_arg.data = NULL;
+    msg->stored_arg.len = 0;
 
     return msg;
 }
@@ -432,6 +434,8 @@ msg_free(struct msg *msg)
         array_destroy(msg->msgs_post);
         msg->msgs_post = NULL;
     }
+
+    msg_free_stored_arg(msg);
 
     log_debug(LOG_VVERB, "free msg %p id %"PRIu64"", msg, msg->id);
     nc_free(msg);
@@ -1746,4 +1750,14 @@ msg_set_keypos(struct msg* req, uint32_t keyn, int start_offset, int len,
 
     kpos->end = kpos->start + len;
     kpos->bucket_len = bucket_len;
+}
+
+void
+msg_free_stored_arg(struct msg* msg)
+{
+    if (msg->stored_arg.data != NULL) {
+        nc_free(msg->stored_arg.data);
+        msg->stored_arg.data = NULL;
+        msg->stored_arg.len = 0;
+    }
 }
