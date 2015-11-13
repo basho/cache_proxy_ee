@@ -10,6 +10,7 @@ typedef enum {
     REQ_RIAK_GET = 9,
     REQ_RIAK_PUT = 11,
     REQ_RIAK_DEL = 13,
+    REQ_RIAK_DT_FETCH = 80,
     REQ_RIAK_DT_UPDATE = 82
 } riak_req_t;
 
@@ -18,6 +19,7 @@ typedef enum {
     RSP_RIAK_GET = 10,
     RSP_RIAK_PUT = 12,
     RSP_RIAK_DEL = 14,
+    RSP_RIAK_DT_FETCH = 81,
     RSP_RIAK_DT_UPDATE = 83
 } riak_rsp_t;
 
@@ -37,14 +39,19 @@ rstatus_t encode_pb_put_req(struct msg* r, struct conn* s_conn, msg_type_t type)
 rstatus_t encode_pb_del_req(struct msg* r, struct conn* s_conn, msg_type_t type);
 rstatus_t encode_pb_sadd_req(struct msg* r, struct conn* s_conn, msg_type_t type);
 rstatus_t encode_pb_srem_req(struct msg* r, struct conn* s_conn, msg_type_t type);
+rstatus_t encode_pb_smembers_req(struct msg* r, struct conn* s_conn, msg_type_t type);
+rstatus_t encode_pb_sismember_req(struct msg* r, struct conn* s_conn, msg_type_t type);
+rstatus_t encode_pb_scard_req(struct msg* r, struct conn* s_conn, msg_type_t type);
 
 RpbGetResp* extract_get_rsp(struct msg* r, uint32_t len, uint8_t* msgid);
 RpbPutResp* extract_put_rsp(struct msg* r, uint32_t len, uint8_t* msgid);
 bool extract_del_rsp(struct msg* r, uint32_t len, uint8_t* msgid);
 DtUpdateResp* extract_dt_update_rsp(struct msg* r, uint32_t len, uint8_t* msgid);
+DtFetchResp* extract_dt_fetch_rsp(struct msg* r, uint32_t len, uint8_t* msgid);
 
 rstatus_t repack_get_rsp(struct msg* r, RpbGetResp* rpbresp);
 rstatus_t repack_dt_update_resp(struct msg* r, DtUpdateResp* dtresp);
+rstatus_t repack_dt_fetch_resp(struct msg* r, DtFetchResp* dtresp);
 
 
 bool extract_rsp(struct msg* r, uint32_t len, uint8_t* msgid, unpack_func func,

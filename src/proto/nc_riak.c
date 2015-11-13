@@ -101,15 +101,14 @@ riak_parse_rsp(struct msg *r)
          *        rpb_get_resp__free_unpacked(rpbresp);
          *    }
          * }
+         * break;
          */
-        break;
     case RSP_RIAK_PUT:
-        break;
     case RSP_RIAK_DT_UPDATE:
-        break;
+    case RSP_RIAK_DT_FETCH:
     case RSP_RIAK_DEL:
         /* DEL doesn't have response */
-        return;
+        break;
     default:
         r->result = MSG_PARSE_ERROR;
         break;
@@ -351,18 +350,37 @@ riak_req_remap(struct conn* conn, struct msg* msg)
             return status;
         }
         break;
+
     case MSG_REQ_REDIS_SADD:
         if ((status = encode_pb_sadd_req(msg, conn, MSG_REQ_RIAK_SADD)) != NC_OK) {
             return status;
         }
-
     	break;
+
     case MSG_REQ_REDIS_SREM:
         if ((status = encode_pb_srem_req(msg, conn, MSG_REQ_RIAK_SREM)) != NC_OK) {
             return status;
         }
-
         break;
+
+    case MSG_REQ_REDIS_SMEMBERS:
+        if ((status = encode_pb_smembers_req(msg, conn, MSG_REQ_RIAK_SMEMBERS)) != NC_OK) {
+            return status;
+        }
+        break;
+
+    case MSG_REQ_REDIS_SISMEMBER:
+        if ((status = encode_pb_sismember_req(msg, conn, MSG_REQ_RIAK_SISMEMBER)) != NC_OK) {
+            return status;
+        }
+        break;
+
+    case MSG_REQ_REDIS_SCARD:
+        if ((status = encode_pb_scard_req(msg, conn, MSG_REQ_RIAK_SCARD)) != NC_OK) {
+            return status;
+        }
+        break;
+
     default:
         return NC_ERROR;
     }
@@ -1150,6 +1168,7 @@ riak_repack(struct msg* r)
     RpbGetResp* rpb_get_resp = NULL;
     RpbPutResp* rpb_put_resp = NULL;
     DtUpdateResp* dt_update_resp = NULL;
+    DtFetchResp* dt_fetch_resp = NULL;
     uint32_t len = 0;
     uint8_t msgid = RSP_RIAK_UNKNOWN;
     if (!get_pb_msglen(r, &len, &msgid)) {
@@ -1222,6 +1241,21 @@ riak_repack(struct msg* r)
         }
 
         dt_update_resp__free_unpacked(dt_update_resp, NULL);
+        break;
+
+    case RSP_RIAK_DT_FETCH:
+        dt_fetch_resp = extract_dt_fetch_rsp(r, len, &msgid);
+
+        if (dt_fetch_resp == NULL) {
+            r->result = MSG_PARSE_ERROR;
+            break;
+        }
+
+        if (repack_dt_fetch_resp(r, dt_fetch_resp) != NC_OK) {
+            r->result = MSG_PARSE_ERROR;
+        }
+
+        dt_fetch_resp__free_unpacked(dt_fetch_resp, NULL);
         break;
 
     default:

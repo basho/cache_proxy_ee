@@ -254,9 +254,13 @@ swallow_response(struct context *ctx, struct conn* c_conn, struct conn* s_conn,
 bool
 process_frontend_rsp(struct context *ctx, struct conn *s_conn, struct msg* msg)
 {
-    switch (msg->type) {
+    const struct msg* pmsg = TAILQ_FIRST(&msg->owner->omsg_q);
+    switch (pmsg->type) {
 
-    case MSG_RSP_REDIS_BULK:
+    case MSG_REQ_REDIS_GET:
+    case MSG_REQ_REDIS_SMEMBERS:
+    case MSG_REQ_REDIS_SISMEMBER:
+    case MSG_REQ_REDIS_SCARD:
         if (msg_nil(msg)) {
             return resend_to_backend(ctx, s_conn, msg);
         }
@@ -381,6 +385,11 @@ process_backend_rsp(struct context *ctx, struct conn *s_conn, struct msg* msg)
         add_pexpire_msg(ctx, c_conn, msg);
         break;
 
+    case MSG_RSP_REDIS_INTEGER:
+    case MSG_RSP_REDIS_MULTIBULK:
+        forward_response(ctx, c_conn, s_conn, pmsg, msg);
+        break;
+
     default:
         break;
     }
@@ -427,11 +436,9 @@ add_pexpire_msg(struct context *ctx, struct conn* c_conn, struct msg* msg)
     ASSERT(msg != NULL);
     ASSERT(msg->peer != NULL);
 
-    if (msg_nil(msg)) {
-        return NC_OK;
+    if (msg->peer->type == MSG_REQ_RIAK_DEL && !msg_nil(msg)) {
+        add_pexpire_msg_riak(ctx, c_conn, msg);
     }
-
-    add_pexpire_msg_riak(ctx, c_conn, msg);
 
     return NC_OK;
 }

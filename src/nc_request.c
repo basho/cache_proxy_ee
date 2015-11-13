@@ -658,6 +658,9 @@ req_forward(struct context *ctx, struct conn *c_conn, struct msg *msg, bool back
 
     case NC_EBADREQ:
         switch (msg->type) {
+        case MSG_REQ_REDIS_SMEMBERS:
+        case MSG_REQ_REDIS_SISMEMBER:
+        case MSG_REQ_REDIS_SCARD:
         case MSG_REQ_REDIS_GET:
             msg->error = 1;
             return;
