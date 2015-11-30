@@ -134,6 +134,64 @@ encode_pb_srem_req(struct msg* r, struct conn* s_conn, msg_type_t type)
     return encode_pb_setop_req(r, s_conn, type, SREM);
 }
 
+/**.......................................................................
+ * Create request for fetching bucket:key from backend.
+ * req should contain bucket and key name
+ * result will be stored in struct msg* r
+ */
+rstatus_t
+fetch_pb_req(DtFetchReq *req, struct msg* r, struct conn* s_conn, msg_type_t type)
+{
+    struct server* server = (struct server*)(s_conn->owner);
+    const struct server_pool* pool = (struct server_pool*)(server->owner);
+    const struct backend_opt* opt = &pool->backend_opt;
+
+    req->has_r = (opt->riak_r != CONF_UNSET_NUM);
+    if (req->has_r) {
+        req->r = opt->riak_r;
+    }
+
+    req->has_pr = (opt->riak_pr != CONF_UNSET_NUM);
+    if (req->has_pr) {
+        req->pr = opt->riak_pr;
+    }
+
+    req->has_n_val = (opt->riak_n != CONF_UNSET_NUM);
+    if (req->has_n_val) {
+        req->n_val = opt->riak_n;
+    }
+
+    if (opt->riak_basic_quorum != CONF_UNSET_NUM) {
+        req->has_basic_quorum = true;
+        req->basic_quorum = opt->riak_basic_quorum;
+    } else {
+        req->has_basic_quorum = true;
+        req->basic_quorum = 1;
+    }
+
+    req->has_sloppy_quorum = (opt->riak_sloppy_quorum != CONF_UNSET_NUM);
+    if (req->has_sloppy_quorum) {
+        req->sloppy_quorum = opt->riak_sloppy_quorum;
+    }
+
+    req->has_notfound_ok = (opt->riak_notfound_ok != CONF_UNSET_NUM);
+    if (req->has_notfound_ok) {
+        req->notfound_ok = opt->riak_notfound_ok;
+    }
+
+    req->has_timeout = (opt->riak_timeout != CONF_UNSET_NUM);
+    if (req->has_timeout) {
+        req->timeout = opt->riak_timeout;
+    }
+
+    req->type.data = (uint8_t *)DATA_TYPE_SETS;
+    req->type.len = sizeof(DATA_TYPE_SETS) - 1;
+
+    return pack_message(r, type, dt_fetch_req__get_packed_size(req),
+                        REQ_RIAK_DT_FETCH, (pb_pack_func)dt_fetch_req__pack,
+                        req, req->bucket.len);
+}
+
 rstatus_t
 encode_pb_smembers_req(struct msg* r, struct conn* s_conn, msg_type_t type)
 {
@@ -153,55 +211,7 @@ encode_pb_smembers_req(struct msg* r, struct conn* s_conn, msg_type_t type)
     if (status != NC_OK) {
         return status;
     }
-
-    struct server* server = (struct server*)(s_conn->owner);
-    const struct server_pool* pool = (struct server_pool*)(server->owner);
-    const struct backend_opt* opt = &pool->backend_opt;
-
-    req.has_r = (opt->riak_r != CONF_UNSET_NUM);
-    if (req.has_r) {
-        req.r = opt->riak_r;
-    }
-
-    req.has_pr = (opt->riak_pr != CONF_UNSET_NUM);
-    if (req.has_pr) {
-        req.pr = opt->riak_pr;
-    }
-
-    req.has_n_val = (opt->riak_n != CONF_UNSET_NUM);
-    if (req.has_n_val) {
-        req.n_val = opt->riak_n;
-    }
-
-    if (opt->riak_basic_quorum != CONF_UNSET_NUM) {
-        req.has_basic_quorum = true;
-        req.basic_quorum = opt->riak_basic_quorum;
-    } else {
-        req.has_basic_quorum = true;
-        req.basic_quorum = 1;
-    }
-
-    req.has_sloppy_quorum = (opt->riak_sloppy_quorum != CONF_UNSET_NUM);
-    if (req.has_sloppy_quorum) {
-        req.sloppy_quorum = opt->riak_sloppy_quorum;
-    }
-
-    req.has_notfound_ok = (opt->riak_notfound_ok != CONF_UNSET_NUM);
-    if (req.has_notfound_ok) {
-        req.notfound_ok = opt->riak_notfound_ok;
-    }
-
-    req.has_timeout = (opt->riak_timeout != CONF_UNSET_NUM);
-    if (req.has_timeout) {
-        req.timeout = opt->riak_timeout;
-    }
-
-    req.type.data = (uint8_t *)DATA_TYPE_SETS;
-    req.type.len = sizeof(DATA_TYPE_SETS) - 1;
-
-    status = pack_message(r, type, dt_fetch_req__get_packed_size(&req),
-                          REQ_RIAK_DT_FETCH, (pb_pack_func)dt_fetch_req__pack,
-                          &req, req.bucket.len);
+    status = fetch_pb_req(&req, r, s_conn, type);
     nc_free(req.bucket.data);
 
     return status;
@@ -299,7 +309,7 @@ copy_values_to_msg(ProtobufCBinaryData *values, uint32_t nval, struct msg *msg)
 rstatus_t
 add_sadd_msg(struct context *ctx, struct conn *c_conn, uint8_t *keyname,
              uint32_t keynamelen, ProtobufCBinaryData *values, uint32_t nval,
-             uint32_t time)
+             msg_type_t type)
 {
     ASSERT(nval != 0);
 
@@ -337,6 +347,7 @@ add_sadd_msg(struct context *ctx, struct conn *c_conn, uint8_t *keyname,
     }
 
     msg->swallow = 1;
+    msg->type = type;
 
     if (TAILQ_EMPTY(&s_conn->imsg_q)) {
         event_add_out(ctx->evb, s_conn);
@@ -344,8 +355,6 @@ add_sadd_msg(struct context *ctx, struct conn *c_conn, uint8_t *keyname,
 
     s_conn->enqueue_inq(ctx, s_conn, msg);
     s_conn->need_auth = 0;
-
-    add_pexpire_msg_key(ctx, c_conn, (char *)keyname, keynamelen, time);
 
     return NC_OK;
 }
@@ -372,6 +381,9 @@ parse_dt_fetch_req(struct msg *r, uint32_t* len, uint8_t* msgid, DtFetchReq** re
     *req = dt_fetch_req__unpack(NULL, *len - 1, pos);
 }
 
+/**.......................................................................
+ * Handle backend fetch result.
+ */
 rstatus_t
 repack_dt_fetch_resp(struct msg* r, DtFetchResp* dtresp)
 {
@@ -390,11 +402,13 @@ repack_dt_fetch_resp(struct msg* r, DtFetchResp* dtresp)
     struct msg* pmsg = TAILQ_FIRST(&r->owner->omsg_q);
     uint8_t msgid;
     uint32_t len;
+    struct conn *c_conn = pmsg->owner;
+    struct context *ctx = conn_to_ctx(c_conn);
+    struct server* server = r->owner->owner;
+    struct server_pool* pool = (struct server_pool*)server->owner;
 
     // sync with frontend
     if(values_count) {
-        struct conn *c_conn = pmsg->owner;
-        struct context *ctx = conn_to_ctx(c_conn);
         DtFetchReq *req = NULL;
 
         parse_dt_fetch_req(pmsg, &len, &msgid, &req);
@@ -408,10 +422,27 @@ repack_dt_fetch_resp(struct msg* r, DtFetchResp* dtresp)
         ASSERT(keylen == sizeof(key) - 1);
         dt_fetch_req__free_unpacked(req, NULL);
 
-        struct server* server = r->owner->owner;
-        struct server_pool* pool = (struct server_pool*)server->owner;
-        add_sadd_msg(ctx, c_conn, (uint8_t*)key, keylen, values,
-                     values_count, pool->server_ttl_ms);
+        switch(pmsg->type) {
+        case MSG_REQ_RIAK_SMEMBERS:
+        case MSG_REQ_RIAK_SISMEMBER:
+        case MSG_REQ_RIAK_SCARD:
+            add_sadd_msg(ctx, c_conn, (uint8_t*)key, keylen, values, values_count, MSG_REQ_RIAK_SADD);
+            add_pexpire_msg_key(ctx, c_conn, (char *)key, keylen, pool->server_ttl_ms);
+            break;
+
+        case MSG_REQ_RIAK_SDIFF:
+        case MSG_REQ_RIAK_SINTER:
+        case MSG_REQ_RIAK_SUNION:
+        case MSG_REQ_RIAK_SDIFFSTORE:
+        case MSG_REQ_RIAK_SINTERSTORE:
+        case MSG_REQ_RIAK_SUNIONSTORE:
+            add_sadd_msg(ctx, c_conn, (uint8_t*)key, keylen, values, values_count, MSG_REQ_HIDDEN);
+            // TODO may be it have to be done after perforing command?
+            add_pexpire_msg_key(ctx, c_conn, (char *)key, keylen, pool->server_ttl_ms);
+            break;
+        default:
+            break;
+        }
     }
 
 
@@ -457,11 +488,297 @@ repack_dt_fetch_resp(struct msg* r, DtFetchResp* dtresp)
         }
         break;
 
+    case MSG_REQ_RIAK_SDIFF:
+    case MSG_REQ_RIAK_SINTER:
+    case MSG_REQ_RIAK_SUNION:
+    case MSG_REQ_RIAK_SDIFFSTORE:
+    case MSG_REQ_RIAK_SINTERSTORE:
+    case MSG_REQ_RIAK_SUNIONSTORE:
+        // put something just to mark then me answered
+        if ((status = msg_prepend_format(r, "+OK")) != NC_OK) {
+            return status;
+        }
+        // check if all subcommands were sent
+        struct msg *orgm = pmsg->frag_owner;
+        ASSERT(orgm != NULL);
+        orgm->integer--;
+        if( orgm->integer == 0) {
+            // if so, sent real command to perfrom it on frontend
+            struct keypos *kpos = array_get(orgm->keys, 0);
+            struct conn *s_conn = server_pool_conn_frontend(ctx, c_conn->owner,
+                                                            kpos->start,
+                                                            kpos->end - kpos->start,
+                                                            NULL);
+            // create new message for request, remapping store commands to simple
+            char *ncline = NULL;
+            struct msg *msg = NULL;
+            switch (pmsg->type) {
+            case MSG_REQ_RIAK_SDIFF:
+            case MSG_REQ_RIAK_SINTER:
+            case MSG_REQ_RIAK_SUNION:
+                msg = msg_content_clone(orgm);
+                if (msg == NULL) {
+                    return NC_ENOMEM;
+                }
+                break;
+            case MSG_REQ_RIAK_SDIFFSTORE:
+                ncline = "\r\n$5\r\nsdiff\r\n";
+                break;
+            case MSG_REQ_RIAK_SINTERSTORE:
+                ncline = "\r\n$6\r\nsinter\r\n";
+                break;
+            case MSG_REQ_RIAK_SUNIONSTORE:
+                ncline = "\r\n$6\r\nsunion\r\n";
+                break;
+            default:
+                NOT_REACHED();
+            }
+            if (ncline) {
+                // remap to command without store
+                struct msg_pos keyspos;
+                char store[] = "store\r\n";
+                struct msg_pos stpos;
+                msg_pos_init_start(orgm, &stpos);
+                msg_find_char(orgm, store, sizeof(store) - 1, &stpos, &keyspos);
+                if(keyspos.result == MSG_NOTFOUND) {
+                    return NC_ERROR;
+                }
+                msg_offset_from(&keyspos, sizeof(store) - 1, &keyspos);
+                msg_find_char(orgm, "\r\n$", 3, &keyspos, &keyspos);
+                if(keyspos.result == MSG_NOTFOUND) {
+                    return NC_ERROR;
+                }
+                msg_offset_from(&keyspos, 2, &keyspos);
+
+                msg = msg_get(orgm->owner, true);
+                if (msg == NULL) {
+                    c_conn->err = errno;
+                    return NC_ENOMEM;
+                }
+
+                if ((status = msg_copy_char(msg, "*", 1)) != NC_OK) {
+                    msg_put(msg);
+                    return status;
+                }
+
+                char db[16];
+                uint32_t dbl = sprintf(db, "%u", 1 + orgm->nsubs / 2);
+
+                if ((status = msg_copy_char(msg, db, dbl)) != NC_OK) {
+                    msg_put(msg);
+                    return status;
+                }
+
+                if ((status = msg_copy_char(msg, ncline, strlen(ncline))) != NC_OK) {
+                    msg_put(msg);
+                    return status;
+                }
+
+                uint32_t klen;
+                msg_offset_between(&stpos, &keyspos, &klen);
+                klen = orgm->mlen - klen;
+
+                msg_copy_from_pos(msg, &keyspos, klen);
+            }
+
+            msg->noreply = 0;
+            msg->swallow = 1;
+            msg->type = pmsg->type;
+
+            if (TAILQ_EMPTY(&s_conn->imsg_q)) {
+                event_add_out(ctx->evb, s_conn);
+            }
+
+            s_conn->enqueue_inq(ctx, s_conn, msg);
+            s_conn->need_auth = 0;
+        }
+        break;
+
     default:
         break;
     }
 
     r->type = MSG_RSP_REDIS_STATUS;
 
+    return NC_OK;
+}
+
+
+/*
+ * Initiate request for key from backend to store the same key in frontend
+ */
+rstatus_t
+riak_sync_key(struct context *ctx, struct msg* r, msg_type_t type, bool skip_first)
+{
+    ASSERT(r != NULL);
+    ASSERT(r->owner != NULL);
+    ASSERT(r->owner->owner != NULL);
+
+    rstatus_t status;
+    struct conn *c_conn = r->owner;
+    struct msg_pos keyname_start_pos = msg_pos_init();
+
+    DtFetchReq req = DT_FETCH_REQ__INIT;
+    r->nsubs = 0;
+
+    while ((status = extract_bucket_key_value(r, &req.bucket, &req.key, NULL,
+                                              &keyname_start_pos, true))
+               == NC_OK) {
+        if(skip_first) { // skip first if true
+            skip_first = false;
+            continue;
+        }
+
+        struct conn* s_conn = server_pool_conn_backend(ctx, c_conn->owner,
+                                                       req.bucket.data,
+                                                       req.bucket.len + req.key.len + 1,
+                                                       NULL);
+
+        struct msg* msg = msg_get(c_conn, true);
+        if (msg == NULL) {
+            c_conn->err = errno;
+            return NC_ENOMEM;
+        }
+        struct mbuf* mbuf = mbuf_get();
+        if (mbuf == NULL) {
+            return NC_ENOMEM;
+        }
+        mbuf_insert(&msg->mhdr, mbuf);
+        msg->pos = mbuf->pos;
+
+        fetch_pb_req(&req, msg, s_conn, type);
+
+        msg->swallow = 1;
+        msg->frag_owner = r;
+        r->nsubs++;
+
+        if (TAILQ_EMPTY(&s_conn->imsg_q)) {
+            event_add_out(ctx->evb, s_conn);
+        }
+
+        s_conn->enqueue_inq(ctx, s_conn, msg);
+        s_conn->need_auth = 0;
+
+        nc_free(req.bucket.data);
+    }
+    r->integer = r->nsubs;
+    r->nsubs = r->nsubs * 2;
+
+    return NC_OK;
+}
+
+/*
+ * Store key in frontend and backend simultaneously
+ */
+rstatus_t
+riak_synced_key(struct context *ctx, struct msg* pmsg, struct msg* amsg, uint32_t *keysfound)
+{
+    ASSERT(pmsg != NULL);
+    ASSERT(amsg != NULL);
+
+    // if no values present, just exit
+    if(amsg->narg == 0)
+        return NC_OK;
+
+    // extract data
+    DtUpdateReq req = DT_UPDATE_REQ__INIT;
+    DtOp op = DT_OP__INIT;
+    SetOp setop = SET_OP__INIT;
+    ProtobufCBinaryData values[amsg->narg];
+    uint32_t i;
+
+    req.has_key = 1;
+    req.op = &op;
+    op.set_op = &setop;
+    setop.n_adds = amsg->narg;
+    setop.adds = values;
+
+    rstatus_t status;
+
+    struct msg_pos keyname_start_pos = msg_pos_init();
+
+    status = extract_bucket_key_value(pmsg, &req.bucket, &req.key, NULL,
+            &keyname_start_pos, false);
+    if (status != NC_OK) {
+        return status;
+    }
+
+    struct msg_pos *keyname_start = NULL;
+
+    for(i = 0; i < amsg->narg; i++) {
+        if ((status = redis_get_next_string(amsg, keyname_start, &keyname_start_pos,
+                                                    &values[i].len))
+                    != NC_OK) {
+            nc_free(req.bucket.data);
+            if(i > 0) {
+                uint32_t j;
+                for(j = 0; j < i - 1; j++) {
+                    nc_free(values[j].data);
+                }
+            }
+            return status;
+        }
+        keyname_start = &keyname_start_pos;
+        values[i].data = nc_alloc(values[i].len);
+
+        if ((status = msg_extract_from_pos_char((char*)values[i].data,
+                                                &keyname_start_pos, values[i].len))
+            != NC_OK) {
+            nc_free(req.bucket.data);
+            if(i > 0) {
+                uint32_t j;
+                for(j = 0; j < i - 1; j++) {
+                    nc_free(values[j].data);
+                }
+            }
+            return status;
+        }
+    }
+
+    struct conn *c_conn = pmsg->owner;
+    struct server* server = amsg->owner->owner;
+    struct server_pool* pool = (struct server_pool*)server->owner;
+
+    // sync frontend
+    add_sadd_msg(ctx, c_conn, req.bucket.data, req.bucket.len + req.key.len + 1,
+                 values, amsg->narg, MSG_REQ_HIDDEN);
+    add_pexpire_msg_key(ctx, c_conn, (char*)req.bucket.data,
+                        req.bucket.len + req.key.len + 1, pool->server_ttl_ms);
+
+    // sync backend
+    struct conn* s_conn = server_pool_conn_backend(ctx, c_conn->owner,
+                                                   req.bucket.data,
+                                                   req.bucket.len + req.key.len + 1,
+                                                   NULL);
+    struct msg* msg = msg_get(c_conn, true);
+    if (msg) {
+        struct mbuf* mbuf = mbuf_get();
+        if (mbuf) {
+            mbuf_insert(&msg->mhdr, mbuf);
+            msg->pos = mbuf->pos;
+            req.type.data = (uint8_t *)DATA_TYPE_SETS;
+            req.type.len = sizeof(DATA_TYPE_SETS) - 1;
+            pack_message(msg, MSG_REQ_HIDDEN,
+                         dt_update_req__get_packed_size(&req),
+                         REQ_RIAK_DT_UPDATE, (pb_pack_func)dt_update_req__pack,
+                         &req, req.bucket.len);
+            msg->swallow = 1;
+            msg->type = MSG_REQ_HIDDEN;
+
+            if (TAILQ_EMPTY(&s_conn->imsg_q)) {
+                event_add_out(ctx->evb, s_conn);
+            }
+
+            s_conn->enqueue_inq(ctx, s_conn, msg);
+            s_conn->need_auth = 0;
+        }
+    }
+
+    // cleanup
+    for(i = 0; i < amsg->narg; i++) {
+        nc_free(values[i].data);
+    }
+    nc_free(req.bucket.data);
+    *keysfound = amsg->narg;
     return NC_OK;
 }

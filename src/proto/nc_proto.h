@@ -170,6 +170,8 @@ rstatus_t riak_add_auth_packet(struct context *ctx, struct conn *c_conn, struct 
 rstatus_t riak_fragment(struct msg *r, uint32_t ncontinuum, struct msg_tqh *frag_msgq);
 void riak_post_connect(struct context *ctx, struct conn *conn, struct server *server);
 void riak_swallow_msg(struct conn *conn, struct msg *pmsg, struct msg *msg);
+rstatus_t riak_sync_key(struct context *ctx, struct msg* r, msg_type_t type, bool skip_first);
+rstatus_t riak_synced_key(struct context *ctx, struct msg* pmsg, struct msg* amsg, uint32_t *keysfound);
 
 struct msg* riak_rsp_recv_next(struct context *ctx, struct conn *conn, bool alloc);
 struct msg* riak_req_send_next(struct context *ctx, struct conn *conn);

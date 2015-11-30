@@ -254,7 +254,7 @@ swallow_response(struct context *ctx, struct conn* c_conn, struct conn* s_conn,
 bool
 process_frontend_rsp(struct context *ctx, struct conn *s_conn, struct msg* msg)
 {
-    const struct msg* pmsg = TAILQ_FIRST(&msg->owner->omsg_q);
+    struct msg* pmsg = TAILQ_FIRST(&msg->owner->omsg_q);
     switch (pmsg->type) {
 
     case MSG_REQ_REDIS_GET:
@@ -266,10 +266,66 @@ process_frontend_rsp(struct context *ctx, struct conn *s_conn, struct msg* msg)
         }
         break;
 
+    case MSG_REQ_REDIS_SDIFF:
+    case MSG_REQ_REDIS_SINTER:
+    case MSG_REQ_REDIS_SUNION:
+    case MSG_REQ_REDIS_SDIFFSTORE:
+    case MSG_REQ_REDIS_SINTERSTORE:
+    case MSG_REQ_REDIS_SUNIONSTORE:
+        if (pmsg->nsubs == 0 && msg_nil(msg)) {
+            switch(pmsg->type) {
+            case MSG_REQ_REDIS_SDIFF:
+                riak_sync_key(ctx, pmsg, MSG_REQ_RIAK_SDIFF, false);
+                break;
+            case MSG_REQ_REDIS_SINTER:
+                riak_sync_key(ctx, pmsg, MSG_REQ_RIAK_SINTER, false);
+                break;
+            case MSG_REQ_REDIS_SUNION:
+                riak_sync_key(ctx, pmsg, MSG_REQ_RIAK_SUNION, false);
+                break;
+            case MSG_REQ_REDIS_SDIFFSTORE:
+                riak_sync_key(ctx, pmsg, MSG_REQ_RIAK_SDIFFSTORE, true);
+                break;
+            case MSG_REQ_REDIS_SINTERSTORE:
+                riak_sync_key(ctx, pmsg, MSG_REQ_RIAK_SINTERSTORE, true);
+                break;
+            case MSG_REQ_REDIS_SUNIONSTORE:
+                riak_sync_key(ctx, pmsg, MSG_REQ_RIAK_SUNIONSTORE, true);
+                break;
+            default:
+                NOT_REACHED();
+            }
+        } else if (pmsg->nsubs == 0) {
+                uint32_t res;
+                switch(pmsg->type) {
+                case MSG_REQ_REDIS_SDIFFSTORE:
+                case MSG_REQ_REDIS_SINTERSTORE:
+                case MSG_REQ_REDIS_SUNIONSTORE:
+                    riak_synced_key(ctx, pmsg, msg, &res);
+                    msg_rewind(msg);
+                    msg_prepend_format(msg, ":%d\r\n", res);
+                    /* no break */
+                default:
+                    forward_response(ctx, pmsg->owner, s_conn, pmsg, msg);
+                }
+
+//                struct msg *nmsg = TAILQ_FIRST(&s_conn->omsg_q);
+//                while (nmsg) {
+//                    msg_put(nmsg);
+//                    TAILQ_REMOVE(&s_conn->omsg_q, nmsg, s_tqe);
+//                    nmsg = TAILQ_FIRST(&s_conn->omsg_q);
+//                    if (nmsg->s_tqe.tqe_next == NULL)
+//                        break;
+//                }
+
+        } else {
+            pmsg->nsubs--;
+        }
+        return true;
+
     default:
         break;
     }
-
     return false;
 }
 
@@ -372,7 +428,9 @@ process_backend_rsp(struct context *ctx, struct conn *s_conn, struct msg* msg)
 
     case MSG_RSP_REDIS_STATUS:
         forward_response(ctx, c_conn, s_conn, pmsg, msg);
-        add_pexpire_msg(ctx, c_conn, msg);
+        if(msg->peer) {
+            add_pexpire_msg(ctx, c_conn, msg);
+        }
         break;
 
     case MSG_RSP_RIAK_INTEGER:
@@ -496,6 +554,7 @@ add_pexpire_msg_key(struct context *ctx, struct conn* c_conn, char* keyname,
     }
 
     msg->swallow = 1;
+    msg->type = MSG_REQ_HIDDEN;
 
     if (TAILQ_EMPTY(&s_conn->imsg_q)) {
         event_add_out(ctx->evb, s_conn);

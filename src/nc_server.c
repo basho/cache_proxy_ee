@@ -769,7 +769,7 @@ server_pool_conn_backend(struct context *ctx, struct server_pool *pool,
                          struct server* input_server)
 {
     ASSERT(pool != NULL);
-    return servers_conn(ctx, &pool->frontends, key, keylen, input_server);
+    return servers_conn(ctx, &pool->backends, key, keylen, input_server);
 }
 
 static rstatus_t

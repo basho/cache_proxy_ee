@@ -75,5 +75,4 @@ unsigned choose_sibling(RpbGetResp* rpbresp);
 unsigned choose_last_modified_sibling(RpbGetResp* rpbresp);
 unsigned choose_random_sibling(unsigned nSib);
 
-
 #endif /* _NC_RIAK_H_ */

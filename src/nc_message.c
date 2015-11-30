@@ -287,6 +287,7 @@ done:
     msg->rnarg = 0;
     msg->rlen = 0;
     msg->integer = 0;
+    msg->nsubs = 0;
 
     msg->err = 0;
     msg->error = 0;
@@ -1727,7 +1728,7 @@ msg_set_keypos(struct msg* req, uint32_t keyn, int start_offset, int len,
     if (req->keys == NULL) {
         return;
     }
-    if (array_n(req->keys) < keyn) {
+    if (array_n(req->keys) < keyn || array_n(req->keys) == 0) {
         return;
     }
     struct keypos *kpos = array_get(req->keys, keyn);

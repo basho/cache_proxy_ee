@@ -199,10 +199,18 @@ typedef enum msg_parse_result {
     ACTION( REQ_RIAK_SMEMBERS )                                                                     \
     ACTION( REQ_RIAK_SISMEMBER )                                                                    \
     ACTION( REQ_RIAK_SCARD )                                                                        \
+    ACTION( REQ_RIAK_SDIFF )                                                                        \
+    ACTION( REQ_RIAK_SINTER )                                                                       \
+    ACTION( REQ_RIAK_SUNION )                                                                       \
+    ACTION( REQ_RIAK_SDIFFSTORE )                                                                   \
+    ACTION( REQ_RIAK_SINTERSTORE )                                                                  \
+    ACTION( REQ_RIAK_SUNIONSTORE )                                                                  \
     ACTION( RSP_RIAK_PING )                                                                         \
     ACTION( RSP_RIAK_KV )                                                                           \
     ACTION( RSP_RIAK_INTEGER )                                                                      \
     ACTION( SENTINEL )                                                                              \
+    ACTION( REQ_HIDDEN )                                                                            \
+    ACTION( REQ_SPLIT )                                                                            \
 
 
 #define DEFINE_ACTION(_name) MSG_##_name,
@@ -292,6 +300,7 @@ struct msg {
     protobuf_c_boolean   has_vclock;      /* riak vclock fields */
     ProtobufCBinaryData  vclock;          /* riak vclock fields */
     ProtobufCBinaryData  stored_arg;      /* redis arguments storage for some commands*/
+    uint32_t             nsubs;           /* number of subcommands for splited commands */
 };
 
 struct msg_pos {
