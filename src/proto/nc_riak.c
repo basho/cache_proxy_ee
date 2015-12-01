@@ -775,6 +775,10 @@ encode_pb_del_req(struct msg* r, struct conn* s_conn, msg_type_t type)
                 req.timeout = opt->riak_timeout;
             }
 
+            if(req.type.len > 0) {
+                req.has_type = 1;
+            }
+
             struct mbuf *mbuf = mbuf_get();
             if (mbuf == NULL) {
                 free_request_ns_key(req);
