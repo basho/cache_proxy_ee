@@ -57,11 +57,28 @@ rstatus_t repack_dt_fetch_resp(struct msg* r, DtFetchResp* dtresp);
 bool extract_rsp(struct msg* r, uint32_t len, uint8_t* msgid, unpack_func func,
             void ** rpbresp);
 bool extract_del_rsp(struct msg* r, uint32_t len, uint8_t* msgid);
-rstatus_t extract_bucket_key_value(struct msg *r, ProtobufCBinaryData *bucket,
+rstatus_t extract_bucket_key_value(struct msg *r,
+                                   ProtobufCBinaryData *type,
+                                   ProtobufCBinaryData *bucket,
                                    ProtobufCBinaryData *key,
                                    ProtobufCBinaryData *value,
                                    struct msg_pos *keyname_start_pos,
                                    bool allow_empty_bucket);
+
+/**
+ * Free request namespaced key which was allocated in one contiguous block.
+ * Riak PB requests have no viable inheritence, so macro to reduce the inlined function versions to the
+ * one and only common pattern.
+ */
+#define free_request_ns_key(req) do { \
+    if (req.type.len > 0) {           \
+        nc_free(req.type.data);       \
+    } else if (req.bucket.len > 0) {  \
+        nc_free(req.bucket.data);     \
+    } else if (req.key.len > 0) {     \
+        nc_free(req.key.data);        \
+    }                                 \
+} while (0)
 
 rstatus_t pack_message(struct msg *r, msg_type_t type, uint32_t msglen,
                        uint8_t reqid, pb_pack_func func, const void *message,

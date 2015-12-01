@@ -3,7 +3,6 @@
 
 #include <nc_riak_private.h>
 
-static const char DATA_TYPE_SETS[] = "sets";
 typedef enum {
     SADD,
     SREM
@@ -46,13 +45,16 @@ encode_pb_setop_req(struct msg* r, struct conn* s_conn, msg_type_t type, SetOpAc
         return NC_ERROR;
     }
 
+    ProtobufCBinaryData *datatype = &req.type;
     ProtobufCBinaryData *bucket = &req.bucket;
     ProtobufCBinaryData *key = &req.key;
     unsigned int value_num = 0;
 
     struct msg_pos keyname_start_pos = msg_pos_init();
     while (value_num < value_count) {
-        status = extract_bucket_key_value(r, bucket, key, &values[value_num],
+        status = extract_bucket_key_value(r,
+                                          datatype, bucket, key,
+                                          &values[value_num],
                                           &keyname_start_pos, true);
         if(status != NC_OK)
             break;
@@ -61,7 +63,7 @@ encode_pb_setop_req(struct msg* r, struct conn* s_conn, msg_type_t type, SetOpAc
             key = NULL;
             if (req.bucket.len <= 0) {
                 // if no bucket specified, return it back to frontend
-                nc_free(req.bucket.data);
+                free_request_ns_key(req);
                 nc_free(values[value_num].data);
                 return NC_EBADREQ;
             }
@@ -95,9 +97,6 @@ encode_pb_setop_req(struct msg* r, struct conn* s_conn, msg_type_t type, SetOpAc
             req.sloppy_quorum = opt->riak_sloppy_quorum;
         }
 
-        req.type.data = (uint8_t *)DATA_TYPE_SETS;
-        req.type.len = sizeof(DATA_TYPE_SETS) - 1;
-
         status = pack_message(r, type, dt_update_req__get_packed_size(&req), REQ_RIAK_DT_UPDATE, (pb_pack_func)dt_update_req__pack, &req, req.bucket.len);
     }
     if(status == NC_OK) {
@@ -106,7 +105,8 @@ encode_pb_setop_req(struct msg* r, struct conn* s_conn, msg_type_t type, SetOpAc
         add_pexpire_msg_key(ctx, c_conn, (char*)req.bucket.data, req.bucket.len + req.key.len + 1, 0);
         r->integer = value_num;
     }
-    nc_free(req.bucket.data);
+
+    free_request_ns_key(req);
     unsigned int i;
     for(i = 0; i < value_num; i++) {
         nc_free(values[i].data);
@@ -142,6 +142,23 @@ encode_pb_srem_req(struct msg* r, struct conn* s_conn, msg_type_t type)
 rstatus_t
 fetch_pb_req(DtFetchReq *req, struct msg* r, struct conn* s_conn, msg_type_t type)
 {
+    ASSERT(r != NULL);
+    ASSERT(s_conn != NULL);
+
+    rstatus_t status;
+
+    struct msg_pos keyname_start_pos = msg_pos_init();
+
+    msg_free_stored_arg(r);
+
+    status = extract_bucket_key_value(r,
+                                      &req->type, &req->bucket, &req->key,
+                                      (type == MSG_REQ_RIAK_SISMEMBER) ? &r->stored_arg : NULL,
+                                      &keyname_start_pos, false);
+    if (status != NC_OK) {
+        return status;
+    }
+
     struct server* server = (struct server*)(s_conn->owner);
     const struct server_pool* pool = (struct server_pool*)(server->owner);
     const struct backend_opt* opt = &pool->backend_opt;
@@ -184,9 +201,6 @@ fetch_pb_req(DtFetchReq *req, struct msg* r, struct conn* s_conn, msg_type_t typ
         req->timeout = opt->riak_timeout;
     }
 
-    req->type.data = (uint8_t *)DATA_TYPE_SETS;
-    req->type.len = sizeof(DATA_TYPE_SETS) - 1;
-
     return pack_message(r, type, dt_fetch_req__get_packed_size(req),
                         REQ_RIAK_DT_FETCH, (pb_pack_func)dt_fetch_req__pack,
                         req, req->bucket.len);
@@ -205,15 +219,18 @@ encode_pb_smembers_req(struct msg* r, struct conn* s_conn, msg_type_t type)
 
     msg_free_stored_arg(r);
 
-    status = extract_bucket_key_value( r, &req.bucket, &req.key,
+    status = extract_bucket_key_value(r, &req.type, &req.bucket, &req.key,
             (type == MSG_REQ_RIAK_SISMEMBER) ? &r->stored_arg : NULL,
             &keyname_start_pos, false);
     if (status != NC_OK) {
         return status;
     }
     status = fetch_pb_req(&req, r, s_conn, type);
-    nc_free(req.bucket.data);
+    status = pack_message(r, type, dt_fetch_req__get_packed_size(&req),
+                          REQ_RIAK_DT_FETCH, (pb_pack_func)dt_fetch_req__pack,
+                          &req, req.bucket.len);
 
+    free_request_ns_key(req);
     return status;
 }
 
@@ -621,7 +638,7 @@ riak_sync_key(struct context *ctx, struct msg* r, msg_type_t type, bool skip_fir
     DtFetchReq req = DT_FETCH_REQ__INIT;
     r->nsubs = 0;
 
-    while ((status = extract_bucket_key_value(r, &req.bucket, &req.key, NULL,
+    while ((status = extract_bucket_key_value(r, &req.type, &req.bucket, &req.key, NULL,
                                               &keyname_start_pos, true))
                == NC_OK) {
         if(skip_first) { // skip first if true
@@ -659,7 +676,7 @@ riak_sync_key(struct context *ctx, struct msg* r, msg_type_t type, bool skip_fir
         s_conn->enqueue_inq(ctx, s_conn, msg);
         s_conn->need_auth = 0;
 
-        nc_free(req.bucket.data);
+        free_request_ns_key(req);
     }
     r->integer = r->nsubs;
     r->nsubs = r->nsubs * 2;
@@ -697,7 +714,7 @@ riak_synced_key(struct context *ctx, struct msg* pmsg, struct msg* amsg, uint32_
 
     struct msg_pos keyname_start_pos = msg_pos_init();
 
-    status = extract_bucket_key_value(pmsg, &req.bucket, &req.key, NULL,
+    status = extract_bucket_key_value(pmsg, &req.type, &req.bucket, &req.key, NULL,
             &keyname_start_pos, false);
     if (status != NC_OK) {
         return status;
@@ -709,7 +726,7 @@ riak_synced_key(struct context *ctx, struct msg* pmsg, struct msg* amsg, uint32_
         if ((status = redis_get_next_string(amsg, keyname_start, &keyname_start_pos,
                                                     &values[i].len))
                     != NC_OK) {
-            nc_free(req.bucket.data);
+            free_request_ns_key(req);
             if(i > 0) {
                 uint32_t j;
                 for(j = 0; j < i - 1; j++) {
@@ -724,7 +741,7 @@ riak_synced_key(struct context *ctx, struct msg* pmsg, struct msg* amsg, uint32_
         if ((status = msg_extract_from_pos_char((char*)values[i].data,
                                                 &keyname_start_pos, values[i].len))
             != NC_OK) {
-            nc_free(req.bucket.data);
+            free_request_ns_key(req);
             if(i > 0) {
                 uint32_t j;
                 for(j = 0; j < i - 1; j++) {
@@ -756,8 +773,6 @@ riak_synced_key(struct context *ctx, struct msg* pmsg, struct msg* amsg, uint32_
         if (mbuf) {
             mbuf_insert(&msg->mhdr, mbuf);
             msg->pos = mbuf->pos;
-            req.type.data = (uint8_t *)DATA_TYPE_SETS;
-            req.type.len = sizeof(DATA_TYPE_SETS) - 1;
             pack_message(msg, MSG_REQ_HIDDEN,
                          dt_update_req__get_packed_size(&req),
                          REQ_RIAK_DT_UPDATE, (pb_pack_func)dt_update_req__pack,
@@ -778,7 +793,7 @@ riak_synced_key(struct context *ctx, struct msg* pmsg, struct msg* amsg, uint32_
     for(i = 0; i < amsg->narg; i++) {
         nc_free(values[i].data);
     }
-    nc_free(req.bucket.data);
+    free_request_ns_key(req);
     *keysfound = amsg->narg;
     return NC_OK;
 }

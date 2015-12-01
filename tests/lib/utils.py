@@ -198,7 +198,9 @@ def retry_read_notfound_ok(read_func, n = None, sleep_s = None):
 def retry_write(write_func, n = None, sleep_s = None):
     return retry_read_notfound_ok(write_func, n, sleep_s)
 
-def nutcracker_key(riak_key):
+def nutcracker_key(riak_key, riak_bucket = None):
+    if riak_bucket is not None and riak_bucket.bucket_type.name != 'default':
+        return "%s:test:%s" % (riak_bucket.bucket_type.name, riak_key)
     return 'test:%s' % riak_key
 
 def thread_id():

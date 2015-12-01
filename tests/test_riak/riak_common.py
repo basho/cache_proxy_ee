@@ -54,13 +54,13 @@ def teardown():
             print('%s was not alive at teardown' % r)
         r.stop()
 
-def getconn():
+def getconn(bucket_type = 'default'):
     for r in all_redis:
         c = redis.Redis(r.host(), r.port())
         c.flushdb()
 
     riak_client = riak.RiakClient(pb_port = riak_cluster.port(), protocol = 'pbc')
-    riak_bucket = riak_client.bucket('test')
+    riak_bucket = riak_client.bucket_type(bucket_type).bucket('test')
 
     nutcracker = redis.Redis(nc.host(), nc.port())
     r = redis.Redis(all_redis[0].host(), all_redis[0].port())

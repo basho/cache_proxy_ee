@@ -389,17 +389,23 @@ riak_req_remap(struct conn* conn, struct msg* msg)
 }
 
 /**.......................................................................
- * Extract bucket, key and value form Redis command.
- * Data in bucket.data and value.data should be free with nc_free()
- * value can be NULL, than no memory should be free
+ * Extract type, bucket, key and value form Redis command.
+ * Data in either type.data, bucket.data, or key.data as well asvalue.data
+ * should be freed with nc_free() since the single string of type:bucket:key
+ * is "extracted" as a single block of memory with sized pointers at each
+ * populated element of the namespaced key.
  */
 rstatus_t
-extract_bucket_key_value(struct msg *r, ProtobufCBinaryData *bucket,
-                         ProtobufCBinaryData *key, ProtobufCBinaryData *value,
+extract_bucket_key_value(struct msg *r,
+                         ProtobufCBinaryData *datatype,
+                         ProtobufCBinaryData *bucket,
+                         ProtobufCBinaryData *key,
+                         ProtobufCBinaryData *value,
                          struct msg_pos *keyname_start_pos,
                          bool allow_empty_bucket)
 {
     size_t keynamelen = 0;
+    uint8_t* data = NULL;
 
     rstatus_t status = NC_OK;
     if (keyname_start_pos->ptr == NULL) {
@@ -411,65 +417,69 @@ extract_bucket_key_value(struct msg *r, ProtobufCBinaryData *bucket,
         }
     }
 
-    if(bucket) {
-        if ((status = redis_get_next_string(r, keyname_start_pos, keyname_start_pos,
-                                            &keynamelen))
+    /* may be in format:
+     * key
+     * bucket:key
+     * datatype:bucket:key
+     * */
+    if ((status = redis_get_next_string(r,
+                                        keyname_start_pos, keyname_start_pos,
+                                        &keynamelen))
             != NC_OK) {
-            return status;
-        }
-
-        bucket->data = nc_alloc(keynamelen + 1);
-        if (bucket->data == NULL) {
-            return NC_ENOMEM;
-        }
-        bucket->data[keynamelen] = 0;
-
-        if ((status = msg_extract_from_pos_char((char *)bucket->data,
-                                                keyname_start_pos, keynamelen))
+        return status;
+    }
+  
+    data = nc_alloc(keynamelen + 1);
+    if (data == NULL) {
+        return NC_ENOMEM;
+    }
+    data[keynamelen] = 0;
+    if ((status = msg_extract_from_pos_char((char *)data,
+                    keyname_start_pos, keynamelen))
             != NC_OK) {
-            nc_free(bucket->data);
-
-            /* no bucket, bad request */
-            return NC_EBADREQ;
-        }
-
-        uint8_t* sep = bucket->data + keynamelen - 1;
-        while (sep >= bucket->data) {
-            if (*sep == ':')
-                break;
-            sep--;
-        }
-        if (sep < bucket->data) {
-            if (allow_empty_bucket == false) {
-                nc_free(bucket->data);
-                return NC_EBADREQ;
-            }
-            bucket->len = 0;
-        } else {
-            bucket->len = sep - bucket->data;
-        }
-
-        key->data = sep + 1;
-        key->len = keynamelen - (sep - bucket->data) - 1;
+        nc_free(data);
     }
 
-    if (value) {
-        if ((status = redis_get_next_string(r, keyname_start_pos,
-                                            keyname_start_pos, &value->len))
-            != NC_OK) {
+    /* reverse walk the data string extracting between caret (pc) and previous caret (ppc) */
+    const char delimiter = ':';
+    ProtobufCBinaryData* parts[3] = { datatype, bucket, key };
+    int part_index = 2;
+    uint8_t* ppc = data + keynamelen - 1;
+    for(uint8_t* pc = ppc; pc > data; --pc) {
+        if(*pc == delimiter) {
+            parts[part_index]->data = pc + 1;
+            parts[part_index]->len = ppc - pc;
+            ppc = --pc;
+            --part_index;
+        }
+    }
+    parts[part_index]->data = data;
+    parts[part_index]->len = ppc - data + 1;
+    for(; --part_index >= 0;) {
+        parts[part_index]->len = 0;
+    }
+    
+    if (!allow_empty_bucket && bucket->len <= 0) {
+        return NC_EBADREQ;
+    }
+
+    if (value != NULL) {
+        if ((status = redis_get_next_string(r,
+                                            keyname_start_pos, keyname_start_pos,
+                                            &value->len))
+                != NC_OK) {
+            nc_free(data);
             return status;
         }
-
         value->data = nc_alloc(value->len + 1);
         if (value->data == NULL) {
+            nc_free(data);
             return NC_ENOMEM;
         }
-        value->data[value->len] = 0;
-
         if ((status = msg_extract_from_pos_char((char*)value->data,
-                                                keyname_start_pos, value->len))
-            != NC_OK) {
-            nc_free(value->data);
+                                                 keyname_start_pos, value->len))
+                != NC_OK) {
+            nc_free(data);
             return status;
         }
     }
@@ -509,7 +519,6 @@ pack_message(struct msg *r, msg_type_t type, uint32_t msglen, uint8_t reqid,
 
     struct mbuf* mbuf = STAILQ_FIRST(&r->mhdr);
     if (pbmsglen <= mbuf_size(mbuf)) {
-
         mbuf_rewind(mbuf);
 
         mbuf_copy(mbuf, (uint8_t*)&netlen, sizeof(netlen));
@@ -574,7 +583,9 @@ _encode_pb_get_req(struct msg* r, struct conn* s_conn, msg_type_t type,
     RpbGetReq req = RPB_GET_REQ__INIT;
     struct msg_pos keyname_start_pos = msg_pos_init();
 
-    if ((status = extract_bucket_key_value(r, &req.bucket, &req.key, NULL,
+    if ((status = extract_bucket_key_value(r,
+                                           &req.type, &req.bucket, &req.key,
+                                           NULL,
                                            &keyname_start_pos, false))
         != NC_OK)
         return status;
@@ -630,8 +641,12 @@ _encode_pb_get_req(struct msg* r, struct conn* s_conn, msg_type_t type,
 
     r->read_before_write = read_before_write;
 
-    status = pack_message(r, type, rpb_get_req__get_packed_size(&req), REQ_RIAK_GET, (pb_pack_func)rpb_get_req__pack, &req, req.bucket.len);
-    nc_free(req.bucket.data);
+    int type_and_bucket_len = ((req.type.len > 0) ? req.type.len + 1 : 0) +
+                              ((req.bucket.len > 0) ? req.bucket.len : 0);
+    status = pack_message(r, type, rpb_get_req__get_packed_size(&req), REQ_RIAK_GET,
+                          (pb_pack_func)rpb_get_req__pack, &req, type_and_bucket_len);
+
+    free_request_ns_key(req);
 
     return status;
 }
@@ -654,14 +669,12 @@ encode_pb_put_req(struct msg* r, struct conn* s_conn, msg_type_t type)
     req.content = &content;
 
     struct msg_pos keyname_start_pos = msg_pos_init();
-    if ((status = extract_bucket_key_value(r, &req.bucket, &req.key,
-                    &req.content[0].value, &keyname_start_pos, false))
+    if ((status = extract_bucket_key_value(r,
+                                           &req.type, &req.bucket, &req.key,
+                                           &req.content[0].value,
+                                           &keyname_start_pos, false))
             != NC_OK)
         return status;
-
-    if (req.bucket.len <= 0) {
-        return NC_ERROR;
-    }
 
     struct server* server = (struct server*)(s_conn->owner);
     const struct server_pool* pool = (struct server_pool*)(server->owner);
@@ -701,7 +714,8 @@ encode_pb_put_req(struct msg* r, struct conn* s_conn, msg_type_t type)
     }
 
     status = pack_message(r, type, rpb_put_req__get_packed_size(&req), REQ_RIAK_PUT, (pb_pack_func)rpb_put_req__pack, &req, req.bucket.len);
-    nc_free(req.bucket.data);
+
+    free_request_ns_key(req);
     nc_free(req.content->value.data);
     return status;
 }
@@ -728,7 +742,9 @@ encode_pb_del_req(struct msg* r, struct conn* s_conn, msg_type_t type)
     struct msg_pos keyname_start_pos = msg_pos_init();
     uint32_t keys_number = 0;
     struct mbuf *mbuffirst = r->mhdr.stqh_first;
-    while ((status = extract_bucket_key_value(r, &req.bucket, &req.key, NULL,
+    while ((status = extract_bucket_key_value(r,
+                                              &req.type, &req.bucket, &req.key,
+                                              NULL,
                                               &keyname_start_pos, true))
            == NC_OK) {
         if (req.bucket.len > 0) {
@@ -760,7 +776,7 @@ encode_pb_del_req(struct msg* r, struct conn* s_conn, msg_type_t type)
 
             struct mbuf *mbuf = mbuf_get();
             if (mbuf == NULL) {
-                nc_free(req.bucket.data);
+                free_request_ns_key(req);
                 return NC_ENOMEM;
             }
             STAILQ_INSERT_HEAD(&r->mhdr, mbuf, next);
@@ -775,10 +791,7 @@ encode_pb_del_req(struct msg* r, struct conn* s_conn, msg_type_t type)
             r->integer++;
         }
 
-        if (req.bucket.data != NULL) {
-            nc_free(req.bucket.data);
-        }
-
+        free_request_ns_key(req);
         if (status != NC_OK)
             return status;
     }
@@ -927,13 +940,18 @@ add_set_msg_riak(struct context *ctx, struct conn* c_conn, struct msg* msg)
     RpbGetReq* req = 0;
     parse_pb_get_req(msg->peer, &len, &msgid, &req);
 
-    uint32_t keynamelen = req->bucket.len + req->key.len + 1;
+    int delimiter_count = ((req->type.len > 0) ? 1 : 0)
+                          + ((req->bucket.len > 0) ? 1 : 0);
+    uint32_t keynamelen = req->type.len + req->bucket.len + req->key.len + delimiter_count;
     char keyname[keynamelen + 1];
-    sprintf(keyname, "%.*s:%.*s", (int)req->bucket.len, req->bucket.data,
+    sprintf(keyname, "%.*s%s%.*s%s%.*s",
+            (int)req->type.len, req->type.data,
+            (req->type.len > 0) ? ":" : "",
+            (int)req->bucket.len, req->bucket.data,
+            (req->bucket.len > 0) ? ":" : "",
             (int)req->key.len, req->key.data);
 
-    if (req)
-        nc_free(req);
+    nc_free(req);
 
     struct msg_pos keyval_start_pos = msg_pos_init();
     size_t keyvallen = 0;

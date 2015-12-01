@@ -46,6 +46,7 @@ class RiakCluster:
                 break
         t2 = time.time()
         logging.info('%s start ok in %.2f seconds' % (self, t2 - t1))
+        self._ensure_string_dt()
         self._ensure_set_dt()
         logging.info('set bucket-type exists, observe, add, remove away!')
 
@@ -134,6 +135,27 @@ class RiakCluster:
                 return int(conf_line.split(':')[-1])
 
         return -1
+
+    def _ensure_string_dt(self):
+        node_name = self.node_names()[0]
+        self.__alive() or self.start()
+        bucket_type_options = { \
+            'devrel_path': self._devrel_path(node_name) \
+            ,'bucket_type': "strings" \
+            ,'bucket_type_props': '{"props":{}}' \
+        }
+
+        if 0 == self._run(TT('$devrel_path/bin/riak-admin bucket-type status $bucket_type', \
+                bucket_type_options)):
+                return
+                
+        if 0 != self._run(TT('$devrel_path/bin/riak-admin bucket-type create $bucket_type \'$bucket_type_props\'', \
+                bucket_type_options)):
+                raise RiakError('Unable to create set bucket_type')
+
+        if 0 != self._run(TT('$devrel_path/bin/riak-admin bucket-type activate $bucket_type', \
+                bucket_type_options)):
+                raise RiakError('Unable to activate set bucket_type')
 
     def _ensure_dt_bucket_type(self, bucket_type_name, datatype):
         node_name = self.node_names()[0]

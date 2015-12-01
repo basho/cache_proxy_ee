@@ -17,6 +17,17 @@ def test_set_dt_empty():
     value = retry_read(lambda: nutcracker.scard(nc_key))
     assert_equal(0, value)
 
+def test_set_dt_delete():
+    (riak_client, _, nutcracker, redis) = getconn()
+    key = distinct_key()
+    nc_key = nutcracker_key(key)
+    wrote = retry_write(lambda: nutcracker.sadd(nc_key, distinct_value()))
+    value = retry_read(lambda: nutcracker.scard(nc_key))
+    assert_equal(1, value)
+    wrote = retry_write(lambda: nutcracker.delete(nc_key))
+    value = retry_read(lambda: nutcracker.scard(nc_key))
+    assert_equal(0, value)
+
 def test_set_dt_add_single():
     (riak_client, _, nutcracker, redis) = getconn()
     key = distinct_key()
