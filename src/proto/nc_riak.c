@@ -591,6 +591,10 @@ _encode_pb_get_req(struct msg* r, struct conn* s_conn, msg_type_t type,
         != NC_OK)
         return status;
 
+    if (req.type.len > 0) {
+        req.has_type = 1;
+    }
+
     struct server* server = (struct server*)(s_conn->owner);
     const struct server_pool* pool = (struct server_pool*)(server->owner);
     const struct backend_opt* opt = &pool->backend_opt;
@@ -677,6 +681,10 @@ encode_pb_put_req(struct msg* r, struct conn* s_conn, msg_type_t type)
             != NC_OK)
         return status;
 
+    if (req.type.len > 0) {
+        req.has_type = 1;
+    }
+
     struct server* server = (struct server*)(s_conn->owner);
     const struct server_pool* pool = (struct server_pool*)(server->owner);
     const struct backend_opt* opt = &pool->backend_opt;
@@ -749,6 +757,10 @@ encode_pb_del_req(struct msg* r, struct conn* s_conn, msg_type_t type)
                                               &keyname_start_pos, true))
            == NC_OK) {
         if (req.bucket.len > 0) {
+            if (req.type.len > 0) {
+                req.has_type = 1;
+            }
+
             req.has_w = (opt->riak_w != CONF_UNSET_NUM);
             if (req.has_w) {
                 req.w = opt->riak_w;
@@ -773,10 +785,6 @@ encode_pb_del_req(struct msg* r, struct conn* s_conn, msg_type_t type)
             req.has_timeout = (opt->riak_timeout != CONF_UNSET_NUM);
             if (req.has_timeout) {
                 req.timeout = opt->riak_timeout;
-            }
-
-            if(req.type.len > 0) {
-                req.has_type = 1;
             }
 
             struct mbuf *mbuf = mbuf_get();
@@ -912,9 +920,16 @@ add_pexpire_msg_riak(struct context *ctx, struct conn* c_conn, struct msg* msg)
         if (req == NULL)
             return NC_ENOMEM;
 
-        const uint32_t keynamelen = req->bucket.len + req->key.len + 1;
+        const uint32_t delimiter_count = ((req->type.len > 0) ? 1 : 0)
+                                         + ((req->bucket.len > 0) ? 1 : 0);
+        const uint32_t keynamelen = req->type.len +
+                                    req->bucket.len +
+                                    req->key.len + delimiter_count;
         char keyname[keynamelen + 1];
-        sprintf(keyname, "%.*s:%.*s", (int)req->bucket.len, req->bucket.data,
+        sprintf(keyname, "%.*s%s%.*s:%.*s",
+                (int)req->type.len, req->type.data,
+                (req->type.len > 0) ? ":" : "",
+                (int)req->bucket.len, req->bucket.data,
                 (int)req->key.len, req->key.data);
 
         add_pexpire_msg_key(ctx, c_conn, keyname, keynamelen, 0);

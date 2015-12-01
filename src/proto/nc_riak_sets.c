@@ -58,6 +58,7 @@ encode_pb_setop_req(struct msg* r, struct conn* s_conn, msg_type_t type, SetOpAc
                                           &keyname_start_pos, true);
         if(status != NC_OK)
             break;
+
         if(bucket) {
             bucket = NULL;
             key = NULL;
@@ -102,7 +103,12 @@ encode_pb_setop_req(struct msg* r, struct conn* s_conn, msg_type_t type, SetOpAc
     if(status == NC_OK) {
         struct conn *c_conn = r->owner;
         struct context *ctx = conn_to_ctx(c_conn);
-        add_pexpire_msg_key(ctx, c_conn, (char*)req.bucket.data, req.bucket.len + req.key.len + 1, 0);
+        if (req.type.len > 0) {
+            add_pexpire_msg_key(ctx, c_conn, (char*)req.type.data,
+                                req.type.len + req.bucket.len + req.key.len + 2, 0);
+        } else {
+            add_pexpire_msg_key(ctx, c_conn, (char*)req.bucket.data, req.bucket.len + req.key.len + 1, 0);
+        }
         r->integer = value_num;
     }
 
@@ -225,6 +231,7 @@ encode_pb_smembers_req(struct msg* r, struct conn* s_conn, msg_type_t type)
     if (status != NC_OK) {
         return status;
     }
+
     status = fetch_pb_req(&req, r, s_conn, type);
     status = pack_message(r, type, dt_fetch_req__get_packed_size(&req),
                           REQ_RIAK_DT_FETCH, (pb_pack_func)dt_fetch_req__pack,
@@ -432,10 +439,15 @@ repack_dt_fetch_resp(struct msg* r, DtFetchResp* dtresp)
         if(req == NULL) {
             return NC_ERROR;
         }
-        char key[req->key.len + req->bucket.len + 2];
-        uint32_t keylen = sprintf(key, "%.*s:%.*s", (uint32_t)req->bucket.len,
-                                  req->bucket.data, (uint32_t)req->key.len,
-                                  req->key.data);
+        const uint32_t delimiter_count = ((req->type.len > 0) ? 1 : 0)
+                                         + ((req->bucket.len > 0) ? 1 : 0);
+ 
+        char key[req->type.len + req->bucket.len + req->key.len + delimiter_count + 1];
+        uint32_t keylen = sprintf(key, "%.*s%s%.*s:%.*s",
+                                  (uint32_t)req->type.len, req->type.data,
+                                  (req->type.len > 0) ? ":" : "",
+                                  (uint32_t)req->bucket.len, req->bucket.data,
+                                  (uint32_t)req->key.len, req->key.data);
         ASSERT(keylen == sizeof(key) - 1);
         dt_fetch_req__free_unpacked(req, NULL);
 
@@ -759,8 +771,13 @@ riak_synced_key(struct context *ctx, struct msg* pmsg, struct msg* amsg, uint32_
     // sync frontend
     add_sadd_msg(ctx, c_conn, req.bucket.data, req.bucket.len + req.key.len + 1,
                  values, amsg->narg, MSG_REQ_HIDDEN);
-    add_pexpire_msg_key(ctx, c_conn, (char*)req.bucket.data,
+    if (req.type.len > 0) {
+        add_pexpire_msg_key(ctx, c_conn, (char*)req.type.data,
+                        req.type.len + req.bucket.len + req.key.len + 2, pool->server_ttl_ms);
+    } else {
+        add_pexpire_msg_key(ctx, c_conn, (char*)req.bucket.data,
                         req.bucket.len + req.key.len + 1, pool->server_ttl_ms);
+    }
 
     // sync backend
     struct conn* s_conn = server_pool_conn_backend(ctx, c_conn->owner,
