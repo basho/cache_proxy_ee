@@ -7,11 +7,17 @@ import time
 import redis
 
 def test_backend():
+    _test_backend()
+
+def test_backend_with_dtype():
+    _test_backend(bucket_type = 'strings')
+
+def _test_backend(bucket_type = 'default'):
     # ensure riak CRUD operations function correctly so we can test nutcracker
     # read-through w/o question as to whether the backend is working.
     key = distinct_key()
     value = distinct_value()
-    (riak_client, riak_bucket, _, _) = getconn()
+    (riak_client, riak_bucket, _, _) = getconn(bucket_type)
     riak_read_func = lambda : riak_bucket.get(key)
     riak_object = retry_read(riak_read_func)
     riak_write_func = lambda : riak_object.store()
@@ -21,6 +27,8 @@ def test_backend():
     wrote = retry_write(riak_write_func)
     assert_not_exception(wrote)
     riak_object_readback = retry_read(riak_read_func)
+    if isinstance(riak_object_readback, RiakError):
+        assert(False), riak_object_readback
     assert_equal(value, riak_object_readback.data)
     wrote = retry_write(riak_delete_func)
     assert_not_exception(wrote)
@@ -29,6 +37,9 @@ def test_backend():
 
 def test_read_through_hit():
     multi_read_through(read_through_hit, 1)
+
+def test_read_through_hit_with_dtype():
+    multi_read_through(read_through_hit, 1, bucket_type = 'strings')
 
 def test_multi_read_through_hit():
     multi_read_through(read_through_hit, riak_multi_n)
@@ -67,6 +78,9 @@ def test_read_through_with_siblings():
 def test_read_through_miss_hit():
     multi_read_through(read_through_miss_hit, 1)
 
+def test_read_through_miss_hit_with_dtype():
+    multi_read_through(read_through_miss_hit, 1, bucket_type = 'strings')
+
 def test_multi_read_through_miss_hit():
     multi_read_through(read_through_miss_hit, riak_multi_n)
 
@@ -82,11 +96,11 @@ def test_multi_read_through_miss_miss():
 def test_many_read_through_miss_miss():
     multi_read_through(read_through_miss_miss, riak_many_n)
 
-def multi_read_through(read_func, n):
+def multi_read_through(read_func, n, bucket_type = 'default'):
     kvs = {}
     while len(kvs) < n:
         kvs[distinct_key()] = distinct_value()
-    (riak_client, riak_bucket, nutcracker, redis) = getconn()
+    (riak_client, riak_bucket, nutcracker, redis) = getconn(bucket_type)
 
     vs = {}
     for key in kvs:
@@ -111,7 +125,7 @@ def multi_read_through(read_func, n):
 
 def read_through_miss_miss(vs, redis, riak_bucket, nutcracker, key, _value):
     value = None
-    nc_key = nutcracker_key(key)
+    nc_key = nutcracker_key(key, riak_bucket)
     read_func = lambda : nutcracker.get(nc_key)
     expire_func = lambda : nutcracker.pexpire(nc_key, 0)
     riak_read_func = lambda: riak_bucket.get(key)
@@ -130,7 +144,7 @@ def sibling_resolution_by_last_modified(riak_object):
 
 def read_through_miss_get(vs, redis, riak_bucket, nutcracker, key, _value):
     riak_bucket.resolver = sibling_resolution_by_last_modified
-    nc_key = nutcracker_key(key)
+    nc_key = nutcracker_key(key, riak_bucket)
     read_func = lambda : nutcracker.get(nc_key)
     expire_func = lambda : nutcracker.pexpire(nc_key, 0)
     riak_read_func = lambda: riak_bucket.get(key)
@@ -142,7 +156,8 @@ def read_through_miss_get(vs, redis, riak_bucket, nutcracker, key, _value):
     vs[key] = (value, cached_value)
 
 def read_through_miss_hit(vs, _redis, riak_bucket, nutcracker, key, value):
-    read_func = lambda : nutcracker.get(nutcracker_key(key))
+    nc_key = nutcracker_key(key, riak_bucket)
+    read_func = lambda : nutcracker.get(nc_key)
     riak_read_func = lambda: riak_bucket.get(key)
     riak_object = retry_read_notfound_ok(riak_read_func)
     riak_write_func = lambda: riak_object.store()
@@ -154,7 +169,7 @@ def read_through_miss_hit(vs, _redis, riak_bucket, nutcracker, key, value):
     vs[key] = (value, cached_value)
 
 def read_through_hit(vs, redis, riak_bucket, nutcracker, key, value):
-    nc_key = nutcracker_key(key)
+    nc_key = nutcracker_key(key, riak_bucket)
     read_func = lambda : nutcracker.get(nc_key)
     redis_write_func = lambda : redis.set(nc_key, value)
     riak_read_func = lambda: riak_bucket.get(key)
