@@ -1004,18 +1004,18 @@ extract_rsp(struct msg* r, uint32_t len, uint8_t* msgid, unpack_func func,
      * the message from multiple mbufs, to pass to
      * rpb_get_resp__unpack below
      */
-    if (len + 4 > mbuf_data_size())
+    if (len + 4 > mbuf_data_size() && rpbresp) {
         allocs = r->mlen;
+    }
 
-    uint8_t sbuf[allocs];
     if (allocs) {
-        buf = sbuf;
+        buf = nc_alloc(allocs);
         if (msg_extract(r, buf, r->mlen) != NC_OK) {
             if (rpbresp) {
                 *rpbresp = NULL;
             }
+            return false;
         }
-        return false;
     } else {
         const struct mbuf* mbuf = STAILQ_FIRST(&r->mhdr);
         buf = mbuf->start;
@@ -1033,6 +1033,9 @@ extract_rsp(struct msg* r, uint32_t len, uint8_t* msgid, unpack_func func,
 
     if (rpbresp) {
         *rpbresp = func(NULL, len - 1, pos);
+        if (allocs) {
+            nc_free(buf);
+        }
         return (*rpbresp) ? true : false;
     }
     return true;
