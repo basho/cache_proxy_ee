@@ -417,51 +417,53 @@ extract_bucket_key_value(struct msg *r,
         }
     }
 
-    /* may be in format:
-     * key
-     * bucket:key
-     * datatype:bucket:key
-     * */
-    if ((status = redis_get_next_string(r,
-                                        keyname_start_pos, keyname_start_pos,
-                                        &keynamelen))
-            != NC_OK) {
-        return status;
-    }
-  
-    data = nc_alloc(keynamelen + 1);
-    if (data == NULL) {
-        return NC_ENOMEM;
-    }
-    data[keynamelen] = 0;
-    if ((status = msg_extract_from_pos_char((char *)data,
-                    keyname_start_pos, keynamelen))
-            != NC_OK) {
-        nc_free(data);
-    }
-
-    /* reverse walk the data string extracting between caret (pc) and previous caret (ppc) */
-    const char delimiter = ':';
-    ProtobufCBinaryData* parts[3] = { datatype, bucket, key };
-    int part_index = 2;
-    uint8_t* pc;
-    uint8_t* ppc = data + keynamelen - 1;
-    for(pc = ppc; pc > data; --pc) {
-        if(*pc == delimiter) {
-            parts[part_index]->data = pc + 1;
-            parts[part_index]->len = (size_t)(ppc - pc);
-            ppc = --pc;
-            --part_index;
+    if(key) {
+        /* may be in format:
+         * key
+         * bucket:key
+         * datatype:bucket:key
+         * */
+        if ((status = redis_get_next_string(r,
+                                            keyname_start_pos, keyname_start_pos,
+                                            &keynamelen))
+                != NC_OK) {
+            return status;
         }
-    }
-    parts[part_index]->data = data;
-    parts[part_index]->len = (size_t)(ppc - data + 1);
-    for(; --part_index >= 0;) {
-        parts[part_index]->len = 0;
-    }
+
+        data = nc_alloc(keynamelen + 1);
+        if (data == NULL) {
+            return NC_ENOMEM;
+        }
+        data[keynamelen] = 0;
+        if ((status = msg_extract_from_pos_char((char *)data,
+                        keyname_start_pos, keynamelen))
+                != NC_OK) {
+            nc_free(data);
+        }
     
-    if (!allow_empty_bucket && bucket->len <= 0) {
-        return NC_EBADREQ;
+        /* reverse walk the data string extracting between caret (pc) and previous caret (ppc) */
+        const char delimiter = ':';
+        ProtobufCBinaryData* parts[3] = { datatype, bucket, key };
+        int part_index = 2;
+        uint8_t* pc;
+        uint8_t* ppc = data + keynamelen - 1;
+        for(pc = ppc; pc > data; --pc) {
+            if(*pc == delimiter) {
+                parts[part_index]->data = pc + 1;
+                parts[part_index]->len = (size_t)(ppc - pc);
+                ppc = --pc;
+                --part_index;
+            }
+        }
+        parts[part_index]->data = data;
+        parts[part_index]->len = (size_t)(ppc - data + 1);
+        for(; --part_index >= 0;) {
+            parts[part_index]->len = 0;
+        }
+
+        if (!allow_empty_bucket && bucket->len <= 0) {
+            return NC_EBADREQ;
+        }
     }
 
     if (value != NULL) {
