@@ -3,13 +3,12 @@
 
 #include <nc_riak_private.h>
 
-typedef enum {
-    SADD,
-    SREM
-} SetOpAction;
-
-static rstatus_t
-encode_pb_setop_req(struct msg* r, struct conn* s_conn, msg_type_t type, SetOpAction act)
+/**.......................................................................
+ * Take a Redis SADD request, and remap it to a PB message suitable for
+ * sending to riak.
+ */
+rstatus_t
+encode_pb_sadd_req(struct msg* r, struct conn* s_conn, msg_type_t type)
 {
     ASSERT(r != NULL);
     ASSERT(s_conn != NULL);
@@ -31,19 +30,8 @@ encode_pb_setop_req(struct msg* r, struct conn* s_conn, msg_type_t type, SetOpAc
     req.op = &op;
     op.set_op = &setop;
 
-    switch (act) {
-    case SADD:
-        setop.n_adds = value_count;
-        setop.adds = values;
-    break;
-    case SREM:
-        setop.n_removes = value_count;
-        setop.removes = values;
-    break;
-    default:
-        NOT_REACHED();
-        return NC_ERROR;
-    }
+    setop.n_adds = value_count;
+    setop.adds = values;
 
     ProtobufCBinaryData *datatype = &req.type;
     ProtobufCBinaryData *bucket = &req.bucket;
@@ -56,10 +44,12 @@ encode_pb_setop_req(struct msg* r, struct conn* s_conn, msg_type_t type, SetOpAc
                                           datatype, bucket, key,
                                           &values[value_num],
                                           &keyname_start_pos, true);
-        if(status != NC_OK)
+        if(status != NC_OK) {
             break;
+        }
 
         if(bucket) {
+            datatype = NULL;
             bucket = NULL;
             key = NULL;
             if (req.bucket.len <= 0) {
@@ -98,7 +88,10 @@ encode_pb_setop_req(struct msg* r, struct conn* s_conn, msg_type_t type, SetOpAc
             req.sloppy_quorum = opt->riak_sloppy_quorum;
         }
 
-        status = pack_message(r, type, dt_update_req__get_packed_size(&req), REQ_RIAK_DT_UPDATE, (pb_pack_func)dt_update_req__pack, &req, req.bucket.len);
+        status = pack_message(r, type, dt_update_req__get_packed_size(&req),
+                              REQ_RIAK_DT_UPDATE,
+                              (pb_pack_func)dt_update_req__pack, &req,
+                              req.bucket.len);
     }
     if(status == NC_OK) {
         struct conn *c_conn = r->owner;
@@ -107,7 +100,8 @@ encode_pb_setop_req(struct msg* r, struct conn* s_conn, msg_type_t type, SetOpAc
             add_pexpire_msg_key(ctx, c_conn, (char*)req.type.data,
                                 req.type.len + req.bucket.len + req.key.len + 2, 0);
         } else {
-            add_pexpire_msg_key(ctx, c_conn, (char*)req.bucket.data, req.bucket.len + req.key.len + 1, 0);
+            add_pexpire_msg_key(ctx, c_conn, (char*)req.bucket.data,
+                                req.bucket.len + req.key.len + 1, 0);
         }
         r->integer = value_num;
     }
@@ -121,23 +115,128 @@ encode_pb_setop_req(struct msg* r, struct conn* s_conn, msg_type_t type, SetOpAc
 }
 
 /**.......................................................................
- * Take a Redis SADD request, and remap it to a PB message suitable for
- * sending to riak.
- */
-rstatus_t
-encode_pb_sadd_req(struct msg* r, struct conn* s_conn, msg_type_t type)
-{
-    return encode_pb_setop_req(r, s_conn, type, SADD);
-}
-
-/**.......................................................................
  * Take a Redis SREM request, and remap it to a PB message suitable for
  * sending to riak.
  */
 rstatus_t
 encode_pb_srem_req(struct msg* r, struct conn* s_conn, msg_type_t type)
 {
-    return encode_pb_setop_req(r, s_conn, type, SREM);
+    ASSERT(r != NULL);
+    ASSERT(s_conn != NULL);
+
+    // We should have command name, bucket:key and at least one value
+    if(r->narg < 3) {
+        return NC_ERROR;
+    }
+    const unsigned int value_count = r->narg - 2;
+
+    rstatus_t status;
+
+    DtUpdateReq req = DT_UPDATE_REQ__INIT;
+    DtOp op = DT_OP__INIT;
+    SetOp setop = SET_OP__INIT;
+    ProtobufCBinaryData value;
+
+    req.has_key = 1;
+    req.op = &op;
+    op.set_op = &setop;
+
+    setop.n_removes = 1;
+    setop.removes = &value;
+
+    struct server* server = (struct server*)(s_conn->owner);
+    const struct server_pool* pool = (struct server_pool*)(server->owner);
+    const struct backend_opt* opt = &pool->backend_opt;
+
+    req.has_w = (opt->riak_w != CONF_UNSET_NUM);
+    if (req.has_w) {
+        req.w = opt->riak_w;
+    }
+
+    req.has_pw = (opt->riak_pw != CONF_UNSET_NUM);
+    if (req.has_pw) {
+        req.pw = opt->riak_pw;
+    }
+
+    req.has_n_val = (opt->riak_n != CONF_UNSET_NUM);
+    if (req.has_n_val) {
+        req.n_val = opt->riak_n;
+    }
+
+    req.has_sloppy_quorum =
+            (opt->riak_sloppy_quorum != CONF_UNSET_NUM);
+    if (req.has_sloppy_quorum) {
+        req.sloppy_quorum = opt->riak_sloppy_quorum;
+    }
+
+    ProtobufCBinaryData *datatype = &req.type;
+    ProtobufCBinaryData *bucket = &req.bucket;
+    ProtobufCBinaryData *key = &req.key;
+    unsigned int value_num = 0;
+    struct mbuf *mbuffirst = r->mhdr.stqh_first;
+
+    struct msg_pos keyname_start_pos = msg_pos_init();
+    while (value_num < value_count) {
+        status = extract_bucket_key_value(r,
+                                          datatype, bucket, key,
+                                          &value,
+                                          &keyname_start_pos, true);
+        if(status != NC_OK) {
+            break;
+        }
+
+        if(bucket) {
+            datatype = NULL;
+            bucket = NULL;
+            key = NULL;
+            if (req.bucket.len <= 0) {
+                // if no bucket specified, return it back to frontend
+                free_request_ns_key(req);
+                nc_free(value.data);
+                return NC_EBADREQ;
+            }
+        }
+        value_num++;
+
+        struct mbuf *mbuf = mbuf_get();
+        if (mbuf == NULL) {
+            free_request_ns_key(req);
+            return NC_ENOMEM;
+        }
+        STAILQ_INSERT_HEAD(&r->mhdr, mbuf, next);
+
+        status = pack_message(r, type, dt_update_req__get_packed_size(&req),
+                                  REQ_RIAK_DT_UPDATE,
+                                  (pb_pack_func)dt_update_req__pack, &req,
+                                  req.bucket.len);
+        if(status != NC_OK) {
+            break;
+        }
+    }
+
+    /* remove last mbuf from message - it contains just list of values */
+    if (value_num > 0) {
+        while (mbuffirst->next.stqe_next) {
+            mbuf_remove(&r->mhdr, mbuffirst->next.stqe_next);
+        }
+        mbuf_remove(&r->mhdr, mbuffirst);
+    }
+
+    struct conn *c_conn = r->owner;
+    struct context *ctx = conn_to_ctx(c_conn);
+    if (req.type.len > 0) {
+        add_pexpire_msg_key(ctx, c_conn, (char*)req.type.data,
+                            req.type.len + req.bucket.len + req.key.len + 2, 0);
+    } else {
+        add_pexpire_msg_key(ctx, c_conn, (char*)req.bucket.data,
+                            req.bucket.len + req.key.len + 1, 0);
+    }
+    r->integer = value_num;
+    r->nsubs = value_num;
+
+    free_request_ns_key(req);
+    nc_free(value.data);
+    return status;
 }
 
 /**.......................................................................
@@ -275,7 +374,6 @@ rstatus_t
 repack_dt_update_resp(struct msg* r, DtUpdateResp* dtresp)
 {
     ASSERT(r != NULL);
-    ASSERT(dtresp != NULL);
 
     rstatus_t status = NC_OK;
 

@@ -109,6 +109,15 @@ riak_parse_rsp(struct msg *r)
     case RSP_RIAK_DEL:
         /* DEL doesn't have response */
         break;
+    case RSP_RIAK_UNKNOWN:
+    {
+        // While removing non-existent values from we will have msgid equal 0
+        struct msg* pmsg = TAILQ_FIRST(&r->owner->omsg_q);
+        if (pmsg->type == MSG_REQ_RIAK_SREM) {
+            break;
+        }
+    }
+        /* no break */
     default:
         r->result = MSG_PARSE_ERROR;
         break;
@@ -1267,6 +1276,17 @@ riak_repack(struct msg* r)
 
         if (repack_del_resp(r) != NC_OK) {
             r->result = MSG_PARSE_ERROR;
+        }
+    }
+        break;
+
+    case RSP_RIAK_UNKNOWN:
+    {
+        struct msg* pmsg = TAILQ_FIRST(&r->owner->omsg_q);
+        if (pmsg->type == MSG_REQ_RIAK_SREM) {
+            if (repack_dt_update_resp(r, dt_update_resp) != NC_OK) {
+                r->result = MSG_PARSE_ERROR;
+            }
         }
     }
         break;

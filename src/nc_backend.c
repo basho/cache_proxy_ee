@@ -427,6 +427,11 @@ process_backend_rsp(struct context *ctx, struct conn *s_conn, struct msg* msg)
         break;
 
     case MSG_RSP_REDIS_STATUS:
+        if(pmsg->nsubs > 0) {
+            if(--pmsg->nsubs > 0) {
+                break;
+            }
+        }
         forward_response(ctx, c_conn, s_conn, pmsg, msg);
         if(msg->peer) {
             add_pexpire_msg(ctx, c_conn, msg);
