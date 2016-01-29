@@ -290,8 +290,7 @@ backend_enqueue_post_msg(void *elem /*struct msg *msg*/,
     } else {
         vclock.len = 0;
     }
-    msg->has_vclock = 1;
-    msg->vclock = vclock;
+    msg_copy_vclock(msg, (protobuf_c_boolean)1, vclock);
 
     s_conn->dequeue_outq(ctx, s_conn, msgp);
     c_conn->dequeue_outq(ctx, c_conn, msgp);
@@ -335,8 +334,7 @@ process_backend_rsp(struct context *ctx, struct conn *s_conn, struct msg* msg)
     switch (msg->type) {
     case MSG_RSP_REDIS_BULK:
         if (pmsg->read_before_write) {
-            pmsg->has_vclock = msg->has_vclock;
-            pmsg->vclock = msg->vclock;
+            msg_copy_vclock(pmsg, msg->has_vclock, msg->vclock);
 
             struct backend_enqueue_post_msg_param prmp;
             prmp.ctx = ctx;
