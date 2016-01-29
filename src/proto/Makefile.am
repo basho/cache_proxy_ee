@@ -5,6 +5,7 @@ AM_CPPFLAGS += -I $(PBPATH)/include
 
 AM_CFLAGS = -Wall -Wshadow
 AM_CFLAGS += -Wno-unused-parameter -Wno-unused-value
+AM_CFLAGS += $(PROTOBUF_CFLAGS)
 
 noinst_LIBRARIES = libproto.a
 

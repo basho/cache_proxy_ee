@@ -697,8 +697,18 @@ encode_pb_put_req(struct msg* r, struct conn* s_conn, msg_type_t type)
 
     if (req.content != NULL) {
         req.content[0].has_content_type = (protobuf_c_boolean)1;
-        req.content[0].content_type.len = 10; /*<< strlen("text/plain")*/
-        req.content[0].content_type.data = (uint8_t*)"text/plain";
+        if ((req.content->value.data[0] == '{') &&
+            (req.content->value.data[req.content->value.len - 1] == '}')) {
+            req.content[0].content_type.len = 16; /*<< strlen("application/json")*/
+            req.content[0].content_type.data = (uint8_t*)"application/json";
+        } else if ((req.content->value.data[0] == '<') &&
+            (req.content->value.data[req.content->value.len - 1] == '>')) {
+            req.content[0].content_type.len = 15; /*<< strlen("application/xml")*/
+            req.content[0].content_type.data = (uint8_t*)"application/xml";
+        } else {
+            req.content[0].content_type.len = 10; /*<< strlen("text/plain")*/
+            req.content[0].content_type.data = (uint8_t*)"text/plain";
+        }
     }
 
     /* Set the vclock, otherwise causing "sibling explosion" */
