@@ -300,6 +300,8 @@ done:
     msg->swallow = 0;
     msg->redis = 0;
     msg->has_vclock = 0;
+    msg->vclock.data = NULL;
+    msg->vclock.len = 0;
 
     return msg;
 }
@@ -462,6 +464,13 @@ msg_put(struct msg *msg)
     if (msg->backend_resend_servers) {
         msg->backend_resend_servers->nelem = 0;
     }
+
+    if (msg->vclock.data) {
+        nc_free(msg->vclock.data);
+        msg->vclock.data = NULL;
+    }
+    msg->has_vclock = 0;
+    msg->vclock.len = 0;
 
     nfree_msgq++;
     TAILQ_INSERT_HEAD(&free_msgq, msg, m_tqe);
@@ -1761,4 +1770,22 @@ msg_set_keypos(struct msg* req, uint32_t keyn, int start_offset, int len,
 
     kpos->end = kpos->start + len;
     kpos->bucket_len = bucket_len;
+}
+
+void
+msg_copy_vclock(struct msg* msg, protobuf_c_boolean has_vclock,
+                ProtobufCBinaryData vclock)
+{
+    msg->has_vclock = has_vclock;
+    if (msg->vclock.data) {
+        nc_free(msg->vclock.data);
+        msg->vclock.data = NULL;
+    }
+    if (has_vclock) {
+        msg->vclock.len = vclock.len;
+        if (vclock.len) {
+            msg->vclock.data = nc_alloc(vclock.len);
+            nc_memcpy(msg->vclock.data, vclock.data, vclock.len);
+        }
+    }
 }

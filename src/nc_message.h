@@ -405,5 +405,6 @@ void msg_get_printable(struct msg* msg, char* buf);
 const uint8_t* msg_key0(struct msg* req, size_t* bucket_len, size_t* key_len);
 
 void msg_set_keypos(struct msg* req, uint32_t keyn, int start_offset, int len, size_t bucket_len);
+void msg_copy_vclock(struct msg* msg, protobuf_c_boolean has_vclock, ProtobufCBinaryData vclock);
 
 #endif
