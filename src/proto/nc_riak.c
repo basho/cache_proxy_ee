@@ -1192,12 +1192,10 @@ riak_repack(struct msg* r)
             break;
         }
 
-        r->has_vclock = rpb_get_resp->has_vclock;
-        r->vclock = rpb_get_resp->vclock;
+        msg_copy_vclock(r, rpb_get_resp->has_vclock, rpb_get_resp->vclock);
 
         if (r->peer != NULL) {
-            r->peer->has_vclock = r->has_vclock;
-            r->peer->vclock = r->vclock;
+            msg_copy_vclock(r->peer, rpb_get_resp->has_vclock, rpb_get_resp->vclock);
         }
 
         if (repack_get_rsp(r, rpb_get_resp) != NC_OK) {
