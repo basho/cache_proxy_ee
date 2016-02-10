@@ -1,3 +1,38 @@
 language: c
-script: CFLAGS="-ggdb3 -O0" autoreconf -fvi && ./configure --enable-debug=log && make && sudo make install
+env:
+  matrix:
+    secure: VrZNKtNgagRaRpIDZ6A6bv/gTp/wDRiDCTw/sRhMWpB3a8dK3uCvZ04Y9GrCg49O5jOynw1FVCW1qISbmBG7i3aRCNIs52KVZbjSGJwF3Nb/AoXJBPfdvH0TCRiisqZlVmn15ezMlwRdQQic4iOpYawzF9ij4MceY5dN7MCQSOkpxTdHWmgEqyC06bCnObKs+z7RqF89xfvgCf8yRUGXdFoKk0FfDhOI/MOb/WxHBXZ5xlmcv6OLK+dV9NAEK9MqPRRb1CnQl71uTnpTY1XByF9cB5MJeRL24IMbWRorsjHS9BuqPXp4TE7XFNEuwTvMZbNjddwV7Jk62y20T53wPeMr/q5u7D3croHp3vuDUeZ7mL36Dy8HehP8RdXLHYN3PcM9h2cDMjSU72XRvPtyok6YNnlX4h6Tgp7NxJ9zuS9qtNRVLfbEGBTyScd8Z9NIB0FnIegLKAqCoyIhEo+ixpGy19UPWpJsLmEpBctpqg6XgXWGA+sNdazd863r0o4WgZKN5s/rj0Tm5tfoaJ4OxbEwaeceBeAPgXXXXtXb3VtIc46xK47E+O9pX1fcUiC+m2Wo/1kPfq/194BetieEmQmDsmPR8AEJBZSWFfeRByxNJu3g9N6VnqKEWziv63hayNJu1HmVxkrUeAkjyxKja6rIw98mXXZ1HLS3aO+LZW8=
+services:
+- redis
+addons:
+  apt:
+    packages:
+    - gcc
+    - g++
+    - make
+    - autoconf
+    - automake
+    - libtool
+    - curl
+    - python
+    - python-dev
+    - python-pip
+    - libffi-dev
+    - git
+    - s3cmd
+install:
+- git clone -b v3.0.0-beta-2 https://github.com/google/protobuf.git protobuf-src
+- (cd protobuf-src && ./autogen.sh && ./configure --prefix=/usr && make && sudo make
+  install)
+- git clone -b v1.2.1 https://github.com/protobuf-c/protobuf-c.git protobuf-c-src
+- (cd protobuf-c-src && ./autogen.sh && ./configure --prefix=/usr && make && sudo
+  make install)
+- pip install --upgrade pip --user --quiet
+- pip install redis --user
+- pip install nose --user
+- pip install protobuf --user
+- pip install cryptography --user
+- pip install riak --user
+- pip install git+https://github.com/andymccurdy/redis-py.git@2.10.3 --user
+script: bash ./travis.sh
 
