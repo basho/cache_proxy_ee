@@ -4,9 +4,9 @@
 # machine. So, this config can be used on the same node with default
 # Redis and Riak configurations,
 root:                           # pool name
-  listen: 0.0.0.0:22121         # listen port and interface
+  listen: 0.0.0.0:22122         # listen port and interface
   hash: fnv1a_64                # hash function name
-  distribution: modula          # key distribution mode
+  distribution: ketama          # key distribution mode
   preconnect: false             # preconnect to each server
   auto_eject_hosts: false       # temporarily exclude server on errors
   redis: true                   # use redis as frontend
