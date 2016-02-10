@@ -1,0 +1,26 @@
+# Cache Proxy config file
+# This is a simple default config which start Cache Proxy on port 22121
+# and using default ports for Redis(6379) and Riak(8087) on the local
+# machine. So, this config can be used on the same node with default
+# Redis and Riak configurations,
+root:                           # pool name
+  listen: 0.0.0.0:22122         # listen port and interface
+  hash: fnv1a_64                # hash function name
+  distribution: ketama          # key distribution mode
+  preconnect: false             # preconnect to each server
+  auto_eject_hosts: false       # temporarily exclude server on errors
+  redis: true                   # use redis as frontend
+  backlog: 512                  # TCP backlog argument
+  timeout: 400                  # timeout value in msec for servers
+  client_connections: 0         # number of connections allowed from clients
+  server_connections: 1         # number of connections for each server
+  server_retry_timeout: 2000    # timeout value in msec
+  server_failure_limit: 2       # number of failures for hosts auto eject
+  server_ttl: 500ms             # cache time-to-live
+  servers:                      # list of frontend servers
+    - 127.0.0.1:6379:1          # frontend record, format ip:port:weight
+  backend_type: riak            # backend type
+  backend_max_resend: 2         # number of repeats for backend on error
+  backends:                     # list of backend servers
+    - 127.0.0.1:8087:1          # backend record, format ip:port:weight
+
