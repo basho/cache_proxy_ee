@@ -95,6 +95,7 @@ pools and the servers within each pool that the BDP Cache Proxy manages. The con
 supports the following keys:
 
 + **listen**: The listening address and port (name:port or ip:port) or an absolute path to sock file (e.g. /var/run/nutcracker.sock) for this server pool.
++ **client_connections**: The maximum number of connections allowed from redis clients. Unlimited by default, though OS-imposed limitations will still apply.
 + **hash**: The name of the hash function. Possible values are:
  + one_at_a_time
  + md5
@@ -131,7 +132,7 @@ Defaults to false.
 message to the backend server.
 + **backends**: A list of server address, port and weight (name:port:weight or ip:port:weight) for this server pool.
 
-For example, see the configuration file in [conf/backend_test.yml](conf/backend_test.yml).
+For example, see the configuration file in [conf/cache_proxy.yml](conf/cache_proxy.yml).
 
 Finally, to make writing a syntactically correct configuration file easier, BDP Cache Proxy
 provides a command-line argument -t or --test-conf that can be used to test the YAML
