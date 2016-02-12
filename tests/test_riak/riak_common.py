@@ -31,9 +31,17 @@ mbuf = getenv('T_MBUF', 512, int)
 large = getenv('T_LARGE', 1000, int)
 all_redis = [
         RedisServer('127.0.0.1', 2110, '/tmp/r/redis-2110/', CLUSTER_NAME, 'redis-2110'),
+        RedisServer('127.0.0.1', 2111, '/tmp/r/redis-2111/', CLUSTER_NAME, 'redis-2111'),
+        RedisServer('127.0.0.1', 2112, '/tmp/r/redis-2112/', CLUSTER_NAME, 'redis-2112'),
         ]
 
-riak_cluster = RiakCluster([('devB', 5200)])
+riak_cluster = RiakCluster([
+                            ('devA', 5200),
+                            ('devB', 5201),
+                            ('devC', 5202),
+                            ('devD', 5203),
+                            ('devE', 5204),
+                            ])
 
 nc = NutCracker('127.0.0.1', 4210, '/tmp/r/nutcracker-4210', CLUSTER_NAME,
                 all_redis, mbuf=mbuf, verbose=nc_verbose, riak_cluster=riak_cluster)

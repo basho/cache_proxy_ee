@@ -25,6 +25,7 @@ large = getenv('T_LARGE', 1000, int)
 all_redis = [
         RedisServer('127.0.0.1', 2100, '/tmp/r/redis-2100/', CLUSTER_NAME, 'redis-2100'),
         RedisServer('127.0.0.1', 2101, '/tmp/r/redis-2101/', CLUSTER_NAME, 'redis-2101'),
+        RedisServer('127.0.0.1', 2102, '/tmp/r/redis-2102/', CLUSTER_NAME, 'redis-2102'),
         ]
 
 nc = NutCracker('127.0.0.1', 4100, '/tmp/r/nutcracker-4100', CLUSTER_NAME,

@@ -9,6 +9,7 @@ import sys
 
 from utils import *
 import conf
+import subprocess
 
 # NOTE: did not derive from ServerBase as the Riak cluster is easier to manage
 # as duck equivalent instead of actually inheritence chain equivalence.
@@ -104,7 +105,9 @@ class RiakCluster:
 
     def _run(self, raw_cmd):
         logging.debug('running: %s' % raw_cmd)
-        ret = os.system(raw_cmd)
+        ret = 1
+        with open(os.devnull, 'w') as devnull:
+            ret = subprocess.check_call(raw_cmd.split(), stdout=devnull, stderr=subprocess.STDOUT)
         logging.debug('[%d] %s' % (ret, raw_cmd))
         return ret
 
@@ -119,6 +122,9 @@ class RiakCluster:
 
     def port(self):
         return self._pb_port(self.node_names()[0])
+
+    def port_from_node_name(self, name):
+        return self._pb_port(name)
 
     def _devrel_path(self, node_name):
         return '%s/riak_devrel_%s' % (self.base_dir(), node_name)
