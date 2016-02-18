@@ -76,7 +76,7 @@ $backends
 $cluster_name:
   listen: 0.0.0.0:$port
   hash: fnv1a_64
-  distribution: modula
+  distribution: ketama
   preconnect: true
   auto_eject_hosts: false
   redis: $is_redis
