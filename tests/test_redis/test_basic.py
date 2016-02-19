@@ -97,8 +97,8 @@ def test_nc_stats():
                 ret += v[name]
         return ret
 
-    assert(get_stat('requests') == 20)
-    assert(get_stat('responses') == 20)
+    assert_equal(20, get_stat('requests'))
+    assert_equal(20, get_stat('responses'))
 
     ##### mget
     keys = kv.keys()
@@ -109,8 +109,8 @@ def test_nc_stats():
     #assert(get_stat('responses') == 30)
 
     #for mget-improve
-    assert(get_stat('requests') == 22)
-    assert(get_stat('responses') == 22)
+    assert_equal(21, get_stat('requests'))
+    assert_equal(21, get_stat('responses'))
 
 def __unsupported__test_issue_323():
     # do on redis
