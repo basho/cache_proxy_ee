@@ -370,6 +370,7 @@ process_backend_rsp(struct context *ctx, struct conn *s_conn, struct msg* msg)
         break;
 
     case MSG_RSP_RIAK_INTEGER:
+    {
         pmsg->frag_owner->integer += msg->integer;
         pmsg->nfrag_done++;
         if (pmsg->nfrag_done < pmsg->nfrag) {
@@ -383,9 +384,15 @@ process_backend_rsp(struct context *ctx, struct conn *s_conn, struct msg* msg)
             pmsg->integer = pmsg->frag_owner->integer;
         }
         forward_response(ctx, c_conn, s_conn, pmsg, msg);
-        add_pexpire_msg(ctx, c_conn, msg);
+        uint32_t i;
+        struct array *keys = pmsg->frag_owner->keys;
+        for (i = 0; i < keys->nelem; i++) {
+            struct keypos *kp = array_get(keys, i);
+            add_pexpire_msg_key(ctx, c_conn, (char*)kp->start,
+                                (uint32_t)(kp->end - kp->start), 0);
+        }
         break;
-
+    }
     default:
         break;
     }
