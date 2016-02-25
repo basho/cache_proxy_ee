@@ -153,18 +153,22 @@ def read_through_miss_hit(vs, _redis, riak_bucket, nutcracker, key, value):
     cached_value = retry_read(read_func)
     vs[key] = (value, cached_value)
 
+def riak_set(riak_object, value):
+    riak_object.data = value
+    riak_object.store()
+
 def read_through_hit(vs, redis, riak_bucket, nutcracker, key, value):
     nc_key = nutcracker_key(key)
     read_func = lambda : nutcracker.get(nc_key)
-    redis_write_func = lambda : redis.set(nc_key, value)
     riak_read_func = lambda: riak_bucket.get(key)
     riak_object = retry_read_notfound_ok(riak_read_func)
+    riak_write_func = lambda: riak_set(riak_object, value)
     riak_delete_func = lambda: riak_object.delete()
     wrote = retry_write(riak_delete_func)
     assert_not_exception(wrote)
     wrote = retry_write(riak_delete_func)
     assert_not_exception(wrote)
-    wrote = retry_write(redis_write_func)
+    wrote = retry_write(riak_write_func)
     assert_not_exception(wrote)
     cached_value = retry_read(read_func)
     vs[key] = (value, cached_value)
