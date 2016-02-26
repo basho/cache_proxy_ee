@@ -26,15 +26,15 @@ def test_mget_mset(kv=default_kv):
     #mget to check
     vals = r.mget(keys)
     for i, k in enumerate(keys):
-        assert(kv[k] == vals[i])
+        assert_equal(kv[k], vals[i])
 
-    assert (len(keys) == r.delete(*keys) )
+    assert_equal(len(keys), r.delete(*keys) )
 
     #mget again
     vals = r.mget(keys)
 
     for i, k in enumerate(keys):
-        assert(None == vals[i])
+        assert_equal(None, vals[i])
 
 def test_mget_mset_on_key_not_exist(kv=default_kv):
     r = getconn()
@@ -62,17 +62,17 @@ def test_mget_mset_on_key_not_exist(kv=default_kv):
     vals = r.mget(keys)
     for i, k in enumerate(keys):
         if k in kv:
-            assert(kv[k] == vals[i])
+            assert_equal(kv[k], vals[i])
         else:
-            assert(vals[i] == None)
+            assert_equal(None, vals[i])
 
-    assert (len(kv) == r.delete(*keys) )
+    assert_equal(len(kv), r.delete(*keys) )
 
     #mget again
     vals = r.mget(keys)
 
     for i, k in enumerate(keys):
-        assert(None == vals[i])
+        assert_equal(None, vals[i])
 
 def test_mget_mset_large():
     for cnt in range(171, large, 171):
@@ -185,29 +185,30 @@ def test_mget_pipeline():
     #mget to check
     vals = r.mget(keys)
     for i, k in enumerate(keys):
-        assert(kv[k] == vals[i])
+        assert_equal(kv[k], vals[i])
 
-    assert (len(keys) == r.delete(*keys) )
+    assert_equal(len(keys), r.delete(*keys))
 
     #mget again
     vals = r.mget(keys)
 
     for i, k in enumerate(keys):
-        assert(None == vals[i])
+        assert_equal(None, vals[i])
 
 def test_multi_delete_normal():
     r = getconn()
 
-    for i in range(100):
-        r.set('key-%s'%i, 'val-%s'%i)
-    for i in range(100):
-        assert_equal('val-%s'%i, r.get('key-%s'%i) )
+    kvs = { 'key-%i' % i: 'val-%i' % i for i in range(100) }
+    keys = kvs.keys()
 
-    keys = ['key-%s'%i for i in range(100)]
-    assert_equal(100, r.delete(*keys))
+    r.mset(kvs)
+    vals = r.mget(keys)
+    assert_equal(len(kvs), reduce(lambda agg, it: agg + (it != None), vals, 0))
 
-    for i in range(100):
-        assert_equal(None, r.get('key-%s'%i) )
+    assert_equal(len(kvs), r.delete(*keys))
+
+    vals = r.mget(keys)
+    assert_equal(100, reduce(lambda agg, it: agg + (it == None), vals, 0))
 
 def test_multi_delete_on_readonly():
     all_redis[0].slaveof(all_redis[1].args['host'], all_redis[1].args['port'])
