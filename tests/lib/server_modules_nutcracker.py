@@ -81,7 +81,7 @@ $cluster_name:
   auto_eject_hosts: false
   redis: $is_redis
   backlog: 512
-  timeout: 400
+  timeout: 4000
   client_connections: 0
   server_connections: 1
   server_retry_timeout: 2000
