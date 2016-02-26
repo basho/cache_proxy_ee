@@ -13,6 +13,7 @@ TMP_DEVREL_DEST=/tmp/r/riak_devrel_$NODE_NAME
 if [ -d $TMP_DEVREL_DEST ]; then
     rm -rf $TMP_DEVREL_DEST
 fi
+mkdir -p `dirname $TMP_DEVREL_DEST`
 tar xzf $DEVREL_TARBALL -C `dirname $TMP_DEVREL_DEST`
 mv `dirname $TMP_DEVREL_DEST`/riak_devrel $TMP_DEVREL_DEST
 # change riak.conf

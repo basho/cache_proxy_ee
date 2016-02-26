@@ -46,10 +46,11 @@ class RiakCluster:
         t2 = time.time()
         logging.info('%s start ok in %.2f seconds' % (self, t2 - t1))
 
-    def _start(self):
-        ret = self._cluster_command('./_binaries/service_riak_nodes.sh start')
         if len(self.node_name_ports()) > 1:
             self._cluster_command('./_binaries/create_riak_cluster.sh')
+
+    def _start(self):
+        ret = self._cluster_command('./_binaries/service_riak_nodes.sh start')
         return 0 == ret
 
     def stop(self):
@@ -68,9 +69,12 @@ class RiakCluster:
         logging.info('%s stop ok in %.2f seconds' %(self, t2 - t1))
 
     def _stop(self):
-        if len(self.node_name_ports()) > 1:
-            self._cluster_command('./_binaries/teardown_riak_cluster.sh')
-        ret = self._cluster_command('./_binaries/service_riak_nodes.sh stop')
+        try:
+            if len(self.node_name_ports()) > 1:
+                self._cluster_command('./_binaries/teardown_riak_cluster.sh')
+            ret = self._cluster_command('./_binaries/service_riak_nodes.sh stop')
+        except subprocess.CalledProcessError:
+            return False
         return 0 == ret
 
     def _cluster_command(self, command_script):
