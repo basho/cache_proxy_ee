@@ -1055,7 +1055,7 @@ msg_content_clone(struct msg *src)
     }
     content[mlen] = '\0';
 
-    if ((status = msg_append(dest, (uint8_t *)content, mlen)) != NC_OK) {
+    if ((status = msg_copy(dest, (uint8_t *)content, mlen)) != NC_OK) {
         nc_free(content);
         msg_put(dest);
         if (pdest != NULL) {
