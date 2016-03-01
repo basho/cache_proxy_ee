@@ -376,22 +376,10 @@ process_backend_rsp(struct context *ctx, struct conn *s_conn, struct msg* msg)
         if (pmsg->nfrag_done < pmsg->nfrag) {
             break;
         }
+        pmsg->integer = pmsg->frag_owner->integer;
+        forward_response(ctx, c_conn, s_conn, pmsg, msg);
+        add_pexpire_msg(ctx, c_conn, msg);
 
-        pmsg->frag_owner->nfrag_done++;
-        if (pmsg->frag_owner->nfrag_done < pmsg->frag_owner->nfrag) {
-            pmsg->swallow = 1;
-            swallow_response(ctx, c_conn, s_conn, pmsg, msg);
-        } else {
-            uint32_t i;
-            struct array *keys = pmsg->frag_owner->keys;
-            for (i = 0; i < keys->nelem; i++) {
-                struct keypos *kp = array_get(keys, i);
-                add_pexpire_msg_key(ctx, c_conn, (char*)kp->start,
-                                    (uint32_t)(kp->end - kp->start), 0);
-            }
-            pmsg->integer = pmsg->frag_owner->integer;
-            forward_response(ctx, c_conn, s_conn, pmsg, msg);
-        }
         break;
     }
     default:
