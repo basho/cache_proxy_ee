@@ -370,7 +370,6 @@ process_backend_rsp(struct context *ctx, struct conn *s_conn, struct msg* msg)
         break;
 
     case MSG_RSP_RIAK_INTEGER:
-    {
         pmsg->frag_owner->integer += msg->integer;
         pmsg->nfrag_done++;
         if (pmsg->nfrag_done < pmsg->nfrag) {
@@ -381,7 +380,7 @@ process_backend_rsp(struct context *ctx, struct conn *s_conn, struct msg* msg)
         add_pexpire_msg(ctx, c_conn, msg);
 
         break;
-    }
+
     default:
         break;
     }
