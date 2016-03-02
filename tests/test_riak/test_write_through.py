@@ -130,6 +130,12 @@ def _delete_bucketless(key_count):
     (riak_client, riak_bucket, nutcracker, redis) = getconn()
     keys = [ distinct_key() for i in range(0, key_count)]
 
+    keys_created = 0
+    for i, key in enumerate(keys):
+        write_func = lambda: nutcracker.set(key, i)
+        keys_created += retry_write(write_func)
+    assert_equal(len(keys), keys_created)
+
     delete_func = lambda : nutcracker.delete(*keys)
     del_response = retry_write(delete_func)
     assert_equal(len(keys), del_response)

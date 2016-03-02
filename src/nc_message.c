@@ -227,7 +227,13 @@ _msg_get(void)
     msg->backend_resend_servers = NULL;
 
 done:
-    /* c_tqe, s_tqe, and m_tqe are left uninitialized */
+    msg->s_tqe.tqe_next = NULL;
+    msg->s_tqe.tqe_prev = NULL;
+    msg->c_tqe.tqe_next = NULL;
+    msg->c_tqe.tqe_prev = NULL;
+    msg->m_tqe.tqe_next = NULL;
+    msg->m_tqe.tqe_prev = NULL;
+
     msg->id = ++msg_id;
     msg->peer = NULL;
     msg->owner = NULL;
@@ -1055,7 +1061,7 @@ msg_content_clone(struct msg *src)
     }
     content[mlen] = '\0';
 
-    if ((status = msg_append(dest, (uint8_t *)content, mlen)) != NC_OK) {
+    if ((status = msg_copy(dest, (uint8_t *)content, mlen)) != NC_OK) {
         nc_free(content);
         msg_put(dest);
         if (pdest != NULL) {

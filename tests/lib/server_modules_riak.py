@@ -9,6 +9,7 @@ import sys
 
 from utils import *
 import conf
+import subprocess
 
 # NOTE: did not derive from ServerBase as the Riak cluster is easier to manage
 # as duck equivalent instead of actually inheritence chain equivalence.
@@ -47,10 +48,10 @@ class RiakCluster:
         logging.info('%s start ok in %.2f seconds' % (self, t2 - t1))
 
         if len(self.node_name_ports()) > 1:
-            self._cluster_command('./_binaries/create_riak_cluster.sh')
+            self._cluster_command('./_binaries/create_riak_cluster.sh', 3)
 
     def _start(self):
-        ret = self._cluster_command('./_binaries/service_riak_nodes.sh start')
+        ret = self._cluster_command('./_binaries/service_riak_nodes.sh start', 3)
         return 0 == ret
 
     def stop(self):
@@ -69,20 +70,34 @@ class RiakCluster:
         logging.info('%s stop ok in %.2f seconds' %(self, t2 - t1))
 
     def _stop(self):
-        try:
-            if len(self.node_name_ports()) > 1:
-                self._cluster_command('./_binaries/teardown_riak_cluster.sh')
-            ret = self._cluster_command('./_binaries/service_riak_nodes.sh stop')
-        except subprocess.CalledProcessError:
-            return False
+        if len(self.node_name_ports()) > 1:
+            try:
+                self._cluster_command('./_binaries/teardown_riak_cluster.sh', 3)
+            except subprocess.CalledProcessError:
+                pass
+        ret = self._cluster_command('./_binaries/service_riak_nodes.sh stop', 3)
         return 0 == ret
 
-    def _cluster_command(self, command_script):
+    def _cluster_command(self, command_script, retries = 0, retry_delay = 0.1):
         cmd_args = {
                 'command_script': command_script,
                 'node_names': ' '.join(self.node_names())
                 }
-        return self._run(TT('$command_script $node_names', cmd_args))
+
+        retries += 1
+        while retries > 0:
+            try:
+                ret = self._run(TT('$command_script $node_names', cmd_args))
+                retries = 0
+                ei = None
+            except subprocess.CalledProcessError:
+                retries -= 1
+                ei = sys.exc_info()
+                time.sleep(retry_delay)
+
+        if ei != None:
+            raise ei[1], None, ei[2]
+        return ret
 
     def node_name_ports(self):
         return self.args['node_name_ports']
@@ -103,12 +118,15 @@ class RiakCluster:
             return False
 
     def __alive(self):
-       ret = self._cluster_command('./_binaries/service_riak_nodes.sh ping')
+       ret = self._cluster_command('./_binaries/service_riak_nodes.sh ping', 3)
        return 0 == ret
 
     def _run(self, raw_cmd):
         logging.debug('running: %s' % raw_cmd)
-        ret = os.system(raw_cmd)
+        ret = 1
+        outfile = getenv('T_RIAK_TEST_LOG', os.devnull)
+        with open(outfile, 'a') as devnull:
+            ret = subprocess.check_call(raw_cmd.split(), stdout=devnull, stderr=subprocess.STDOUT)
         logging.debug('[%d] %s' % (ret, raw_cmd))
         return ret
 
@@ -123,6 +141,9 @@ class RiakCluster:
 
     def port(self):
         return self._pb_port(self.node_names()[0])
+
+    def port_from_node_name(self, name):
+        return self._pb_port(name)
 
     def _devrel_path(self, node_name):
         return '%s/riak_devrel_%s' % (self.base_dir(), node_name)

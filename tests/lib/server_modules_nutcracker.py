@@ -53,18 +53,21 @@ class NutCracker(ServerBase):
         if riak_cluster == None:
             return ''
 
-        server_template = '''
-    - $host:$port:1
+        server_template = '''    - $host:$port:1
 '''
         template = '''
   backend_type: riak
   backend_max_resend: 2
-  backends: $backends
+  backends:
+$backends
 '''
-        server_cfg = TT(server_template, {
-            'host': riak_cluster.host(),
-            'port': riak_cluster.port()
-            })
+        node_names = riak_cluster.node_names()
+        server_cfg = ''
+        for node_name in node_names: 
+            server_cfg = server_cfg + TT(server_template, {
+                'host': riak_cluster.host(),
+                'port': riak_cluster.port_from_node_name(node_name)
+                })
 
         return TT(template, { 'backends': server_cfg })
 
@@ -73,12 +76,12 @@ class NutCracker(ServerBase):
 $cluster_name:
   listen: 0.0.0.0:$port
   hash: fnv1a_64
-  distribution: modula
+  distribution: ketama
   preconnect: true
   auto_eject_hosts: false
   redis: $is_redis
   backlog: 512
-  timeout: 400
+  timeout: 4000
   client_connections: 0
   server_connections: 1
   server_retry_timeout: 2000

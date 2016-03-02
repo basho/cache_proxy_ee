@@ -732,6 +732,7 @@ encode_pb_del_req(struct msg* r, struct conn* s_conn, msg_type_t type)
 {
     ASSERT(r != NULL);
     ASSERT(s_conn != NULL);
+    ASSERT(r->frag_owner != NULL);
 
     struct conn *c_conn = r->owner;
     struct context *ctx = conn_to_ctx(c_conn);
@@ -802,6 +803,7 @@ encode_pb_del_req(struct msg* r, struct conn* s_conn, msg_type_t type)
 
     /* Mark number of sub messages */
     r->nfrag = keys_number;
+    r->frag_owner->integer += r->integer;
 
     /* remove last mbuf from message - it contains just list of keys */
     if (keys_number > 0) {
@@ -812,10 +814,8 @@ encode_pb_del_req(struct msg* r, struct conn* s_conn, msg_type_t type)
         return NC_OK;
     } else if (r->integer > 0) {
         /* if no messages for riak, then answer on response with number of redis requests(bucketless keys) */
-        ASSERT(r->frag_owner != NULL);
         struct conn *conn = r->frag_owner->owner;
         ASSERT(conn != NULL);
-        r->frag_owner->integer = r->integer;
 
         /* remove subresponse of fragmented message */
         r->noreply = 1;
@@ -995,8 +995,8 @@ extract_rsp(struct msg* r, uint32_t len, uint8_t* msgid, unpack_func func,
             if (rpbresp) {
                 *rpbresp = NULL;
             }
+            return false;
         }
-        return false;
     } else {
         const struct mbuf* mbuf = STAILQ_FIRST(&r->mhdr);
         buf = mbuf->start;
@@ -1026,8 +1026,9 @@ RpbGetResp*
 extract_get_rsp(struct msg* r, uint32_t len, uint8_t* msgid)
 {
     RpbGetResp* rpbresp;
-    extract_rsp(r, len, msgid, (unpack_func)rpb_get_resp__unpack,
-                (void*)&rpbresp);
+    if (extract_rsp(r, len, msgid, (unpack_func)rpb_get_resp__unpack,
+                (void*)&rpbresp) == false)
+        return NULL;
     return rpbresp;
 }
 
@@ -1038,8 +1039,9 @@ RpbPutResp*
 extract_put_rsp(struct msg* r, uint32_t len, uint8_t* msgid)
 {
     RpbPutResp* rpbresp;
-    extract_rsp(r, len, msgid, (unpack_func)rpb_put_resp__unpack,
-                (void*)&rpbresp);
+    if (extract_rsp(r, len, msgid, (unpack_func)rpb_put_resp__unpack,
+                (void*)&rpbresp) == false)
+        return NULL;
     return rpbresp;
 }
 
