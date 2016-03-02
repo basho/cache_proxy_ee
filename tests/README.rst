@@ -74,6 +74,7 @@ variables
     export T_PRIME_CONNECTION_DELAY=1.0 will delay 1.0 seconds between retries to prime the connection (default:1.0)
     export T_RIAK_MULTI=2 will execute 2 concurrent requests for multi tests (default:2)
     export T_RIAK_MANY=50 will execute 50 concurrent requests for manu tests (default:50)
+    export T_RIAK_TEST_LOG=/tmp/r/nutcracker_tests_run.out will log the output of the Riak server module _run calls to the path specified (default: /dev/null)
 
 T_LOGFILE:
 
