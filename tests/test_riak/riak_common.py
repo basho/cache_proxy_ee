@@ -18,6 +18,7 @@ from server_modules_redis import *
 from server_modules_riak import *
 from server_modules_nutcracker import *
 from utils import *
+from all_redis import *
 
 # NOTE: such naive thread-per-request implementation as opposed to thread pool
 # doesn't scale far enough for load testing, but here we are testing concurrent
@@ -71,7 +72,7 @@ def getconn():
     riak_bucket = riak_client.bucket('test')
 
     nutcracker = redis.Redis(nc.host(), nc.port())
-    r = redis.Redis(all_redis[0].host(), all_redis[0].port())
+    r = AllRedis(all_redis)
 
     return (riak_client, riak_bucket, nutcracker, r)
 
