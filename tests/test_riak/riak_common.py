@@ -110,8 +110,15 @@ def shutdown_redis_nodes(num):
     for i in range(0, num):
         all_redis[i].stop()
 
+def restore_redis_nodes():
+    for r in all_redis:
+        r.start()
+
 def shutdown_riak_nodes(num):
     node_names = riak_cluster.node_names()
     assert(num <= len(node_names))
     for i in range(0, num):
-        RiakCluster.shutdown(node_names[i])
+        riak_cluster.shutdown(node_names[i])
+
+def restore_riak_nodes():
+    riak_cluster.restore()

@@ -23,6 +23,7 @@ class RiakCluster:
                 'name'             : 'riak',
                 'node_name_ports'  : node_name_ports,
                 }
+        self._shutdowned_nodes = []
 
     def __str__(self):
         return TT('[$name:$node_name_ports]', self.args)
@@ -161,5 +162,13 @@ class RiakCluster:
         return -1
 
     def shutdown(self, node_name):
+        self._shutdowned_nodes.append(node_name);
         ret = self._nodes_command(node_name, './_binaries/service_riak_nodes.sh stop', 3)
+        return 0 == ret
+
+    def restore(self):
+        if len(self._shutdowned_nodes) == 0:
+            return True
+        ret = self._nodes_command(self._shutdowned_nodes, './_binaries/service_riak_nodes.sh start', 3)
+        self._shutdowned_nodes.clear();
         return 0 == ret
