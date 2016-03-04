@@ -45,7 +45,8 @@ riak_cluster = RiakCluster([
                             ])
 
 nc = NutCracker('127.0.0.1', 4210, '/tmp/r/nutcracker-4210', CLUSTER_NAME,
-                all_redis, mbuf=mbuf, verbose=nc_verbose, riak_cluster=riak_cluster)
+                all_redis, mbuf=mbuf, verbose=nc_verbose, riak_cluster=riak_cluster,
+                auto_eject=True)
 
 def setup():
     print 'setup(mbuf=%s, verbose=%s)' %(mbuf, nc_verbose)
@@ -104,3 +105,13 @@ def create_siblings(key):
 def siblings_str(riak_object):
     return str([ str(content.data) for content in riak_object.siblings ])
 
+def shutdown_redis_nodes(num):
+    assert(num <= len(all_redis))
+    for i in range(0, num):
+        all_redis[i].stop()
+
+def shutdown_riak_nodes(num):
+    node_names = riak_cluster.node_names()
+    assert(num <= len(node_names))
+    for i in range(0, num):
+        RiakCluster.shutdown(node_names[i])

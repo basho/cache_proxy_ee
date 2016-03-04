@@ -205,4 +205,3 @@ def _delete_multi_mixed(key_count, bucketless_func):
         read_func = lambda: nutcracker.get(nutcracker_key(key))
         cached_value = retry_read_notfound_ok(read_func)
         assert_equal(None, cached_value)
-

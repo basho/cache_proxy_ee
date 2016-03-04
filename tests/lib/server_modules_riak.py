@@ -79,9 +79,12 @@ class RiakCluster:
         return 0 == ret
 
     def _cluster_command(self, command_script, retries = 0, retry_delay = 0.1):
+        return self._nodes_command(self.node_names(), command_script, retries, retry_delay)
+
+    def _nodes_command(self, node_names, command_script, retries = 0, retry_delay = 0.1):
         cmd_args = {
                 'command_script': command_script,
-                'node_names': ' '.join(self.node_names())
+                'node_names': ' '.join(node_names)
                 }
 
         retries += 1
@@ -156,3 +159,7 @@ class RiakCluster:
                 return int(conf_line.split(':')[-1])
 
         return -1
+
+    def shutdown(self, node_name):
+        ret = self._nodes_command(node_name, './_binaries/service_riak_nodes.sh stop', 3)
+        return 0 == ret
