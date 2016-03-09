@@ -98,5 +98,5 @@ cp $(which redis-cli) tests/_binaries/
 (cd tests/ && RT_DEVREL_SRC=../dev/dev1 ./_binaries/create_riak_devrel_tarball.sh)
 
 # perform tests
-(cd tests/ && ./nosetests.sh)
+(cd tests/ && travis_wait 20 ./nosetests.sh)
 

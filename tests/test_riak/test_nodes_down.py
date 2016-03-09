@@ -40,6 +40,9 @@ def _create_delete(key_count, redis_to_shutdown, riak_to_shutdown):
     del_response = retry_write(delete_func)
     assert_equal(len(nc_keys), del_response)
 
+    restore_redis_nodes()
+    restore_riak_nodes()
+
     failed_to_delete = 0
     for i, key in enumerate(nc_keys):
         riak_read_func = lambda : riak_bucket.get(key)
@@ -48,8 +51,6 @@ def _create_delete(key_count, redis_to_shutdown, riak_to_shutdown):
             failed_to_delete += 1
             continue
     assert_equal(0, failed_to_delete)
-    restore_redis_nodes()
-    restore_riak_nodes()
 
 def test_happy_path():
     _create_delete(riak_many_n, 0, 0)
