@@ -1327,7 +1327,7 @@ msg_offset_from(struct msg_pos* start_pos, uint32_t offset,
 
     ASSERT(res_pos != NULL);
 
-    size_t mbuf_size = 0;
+    size_t mb_size = 0;
     size_t remaining_offset = offset;
     uint8_t *start_ptr = 0;
 
@@ -1341,16 +1341,16 @@ msg_offset_from(struct msg_pos* start_pos, uint32_t offset,
             start_ptr = mbuf->start;
         }
 
-        mbuf_size = (size_t)(mbuf->last - start_ptr);
+        mb_size = (size_t)(mbuf->last - start_ptr);
 
-        if (mbuf_size >= remaining_offset) {
+        if (mb_size >= remaining_offset) {
             res_pos->msg = start_pos->msg;
             res_pos->mbuf = mbuf;
             res_pos->ptr = start_ptr + remaining_offset;
             res_pos->result = MSG_FOUND;
             return;
         } else {
-            remaining_offset -= mbuf_size;
+            remaining_offset -= mb_size;
         }
     }
 
