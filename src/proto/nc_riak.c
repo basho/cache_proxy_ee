@@ -165,14 +165,14 @@ get_pb_mbuflen(struct mbuf* mbuf, uint32_t* len, uint8_t* msgid)
     ASSERT(len != NULL);
     /* TODO: determine why mbuf_length() which is based on mbuf->pos is not used here. */
     ASSERT(mbuf->last >= mbuf->start);
-    uint32_t mblen = mbuf->last - mbuf->start;
+    uint32_t mlen = mbuf->last - mbuf->start;
 
     size_t len_size = sizeof(*len);
     size_t hdr_size = len_size + 1;
     uint32_t netlen;
     uint8_t* netlenptr = (uint8_t*)&netlen;
 
-    if (mblen >= hdr_size) {
+    if (mlen >= hdr_size) {
         unsigned i = 0;
         for (i = 0; i < len_size; i++) {
             *(netlenptr + i) = *(mbuf->start + i);

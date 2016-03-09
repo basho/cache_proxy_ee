@@ -460,12 +460,14 @@ add_pexpire_msg_key(struct context *ctx, struct conn* c_conn, char* keyname,
                                                           pexipire_begin_proto,
                                                           keynamelen);
     ASSERT(pexipire_begin_len == sizeof(pexipire_begin) - 1);
+    UNUSED(pexipire_begin_len);
 
     char pexipire_finish[sizeof(pexipire_finish_proto) - 4 + ndig(ntime_dig)
                          + ntime_dig];
     const uint32_t pexipire_finish_len = (uint32_t)sprintf(
             pexipire_finish, pexipire_finish_proto, ntime_dig, time);
     ASSERT(pexipire_finish_len == sizeof(pexipire_finish) - 1);
+    UNUSED(pexipire_finish_len);
 
     struct msg* msg = msg_get(c_conn, true);
     if (msg == NULL) {
