@@ -117,8 +117,8 @@ def restore_redis_nodes():
 def shutdown_riak_nodes(num):
     node_names = riak_cluster.node_names()
     assert(num <= len(node_names))
-    for i in range(0, num):
-        riak_cluster.shutdown(node_names[i])
+    if num > 0:
+        riak_cluster.shutdown(node_names[-num:])
 
 def restore_riak_nodes():
     riak_cluster.restore()

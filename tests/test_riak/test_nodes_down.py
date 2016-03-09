@@ -25,7 +25,10 @@ def _create_delete(key_count, redis_to_shutdown, riak_to_shutdown):
     keys_created = 0
     for i, key in enumerate(nc_keys):
         write_func = lambda: nutcracker.set(key, key)
-        keys_created += retry_write(write_func)
+        try:
+            keys_created += retry_write(write_func)
+        except TypeError:
+            pass
     assert_equal(len(nc_keys), keys_created)
 
     for i, key in enumerate(nc_keys):
@@ -36,20 +39,15 @@ def _create_delete(key_count, redis_to_shutdown, riak_to_shutdown):
     delete_func = lambda : nutcracker.delete(*nc_keys)
     del_response = retry_write(delete_func)
     assert_equal(len(nc_keys), del_response)
-# TODO
-#    failed_to_delete = 0
-#    for i, key in enumerate(nc_keys):
-#        read_func = lambda: nutcracker.get(nutcracker_key(key))
-#        riak_read_func = lambda : riak_bucket.get(key)
-#        cached_value = retry_read_notfound_ok(read_func)
-#        if None != cached_value:
-#            failed_to_delete += 1
-#            continue
-#        riak_object = retry_read_notfound_ok(riak_read_func)
-#        if None != riak_object.data:
-#            failed_to_delete += 1
-#            continue
-#    assert_equal(0, failed_to_delete)
+
+    failed_to_delete = 0
+    for i, key in enumerate(nc_keys):
+        riak_read_func = lambda : riak_bucket.get(key)
+        riak_object = retry_read_notfound_ok(riak_read_func)
+        if None != riak_object.data:
+            failed_to_delete += 1
+            continue
+    assert_equal(0, failed_to_delete)
     restore_redis_nodes()
     restore_riak_nodes()
 
@@ -62,9 +60,8 @@ def test_one_redis_node_down():
 def test_two_redis_nodes_down():
     _create_delete(riak_many_n, 2, 0)
 
-#TODO, shutdown_riak_nodes throw an error
-def _test_one_riak_node_down():
+def test_one_riak_node_down():
     _create_delete(riak_many_n, 0, 1)
 
-def _test_two_riak_nodes_down():
+def test_two_riak_nodes_down():
     _create_delete(riak_many_n, 0, 2)
