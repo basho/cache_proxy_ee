@@ -34,7 +34,7 @@ def getenv(key, default, conversion_func = None):
             value = default
     return value
 
-default_retry_times = getenv('T_RETRY_TIMES', 5, int)
+default_retry_times = getenv('T_RETRY_TIMES', 10, int)
 default_retry_delay = getenv('T_RETRY_DELAY', 0.1, float)
 
 logfile = getenv('T_LOGFILE', 'log/t.log')
