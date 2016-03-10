@@ -23,6 +23,7 @@ class RiakCluster:
                 'name'             : 'riak',
                 'node_name_ports'  : node_name_ports,
                 }
+        self._shutdowned_nodes = []
 
     def __str__(self):
         return TT('[$name:$node_name_ports]', self.args)
@@ -79,9 +80,12 @@ class RiakCluster:
         return 0 == ret
 
     def _cluster_command(self, command_script, retries = 0, retry_delay = 0.1):
+        return self._nodes_command(self.node_names(), command_script, retries, retry_delay)
+
+    def _nodes_command(self, node_names, command_script, retries = 0, retry_delay = 0.1):
         cmd_args = {
                 'command_script': command_script,
-                'node_names': ' '.join(self.node_names())
+                'node_names': ' '.join(node_names)
                 }
 
         retries += 1
@@ -156,3 +160,17 @@ class RiakCluster:
                 return int(conf_line.split(':')[-1])
 
         return -1
+
+    def shutdown(self, node_names):
+        self._shutdowned_nodes.extend(node_names);
+        ret = self._nodes_command(node_names, './_binaries/service_riak_nodes.sh stop', 3)
+        return 0 == ret
+
+    def restore(self):
+        if len(self._shutdowned_nodes) == 0:
+            return True
+        ret = self._nodes_command(self._shutdowned_nodes, './_binaries/service_riak_nodes.sh start', 3)
+        self._shutdowned_nodes = []
+        if len(self.node_name_ports()) > 1:
+            self._cluster_command('./_binaries/create_riak_cluster.sh', 3)
+        return 0 == ret
