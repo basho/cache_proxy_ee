@@ -160,10 +160,9 @@ server_deinit(struct array *server)
     uint32_t i, nserver;
 
     for (i = 0, nserver = array_n(server); i < nserver; i++) {
-        struct server *s;
-
-        s = array_pop(server);
+        struct server *s = array_pop(server);
         ASSERT(TAILQ_EMPTY(&s->s_conn_q) && s->ns_conn_q == 0);
+        UNUSED(s);
     }
     array_deinit(server);
 }

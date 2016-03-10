@@ -198,6 +198,8 @@ ssize_t _nc_recvn(int sd, void *vptr, size_t n);
 
 #endif
 
+#define UNUSED(x) ((void)(x))
+
 void nc_assert(const char *cond, const char *file, int line, int panic);
 void nc_stacktrace(int skip_count);
 void nc_stacktrace_fd(int fd);
