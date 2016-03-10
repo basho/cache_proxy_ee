@@ -171,4 +171,6 @@ class RiakCluster:
             return True
         ret = self._nodes_command(self._shutdowned_nodes, './_binaries/service_riak_nodes.sh start', 3)
         self._shutdowned_nodes = []
+        if len(self.node_name_ports()) > 1:
+            self._cluster_command('./_binaries/create_riak_cluster.sh', 3)
         return 0 == ret
