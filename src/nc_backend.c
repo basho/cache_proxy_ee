@@ -295,11 +295,11 @@ backend_enqueue_post_msg(void *elem /*struct msg *msg*/,
     s_conn->dequeue_outq(ctx, s_conn, msgp);
     c_conn->dequeue_outq(ctx, c_conn, msgp);
 
-    c_conn->enqueue_outq(ctx, c_conn, msg);
-    s_conn->enqueue_inq(ctx, s_conn, msg);
-
     msg->noreply = 0;
     s_conn->req_remap(s_conn, msg);
+
+    c_conn->enqueue_outq(ctx, c_conn, msg);
+    s_conn->enqueue_inq(ctx, s_conn, msg);
 
     return status;
 }
