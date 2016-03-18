@@ -4,6 +4,13 @@
 from riak_common import *
 import riak
 import redis
+import numbers
+
+def _set_expecting_numeric_response(nutcracker, key, value):
+    response = nutcracker.set(key, value)
+    if not isinstance(response, numbers.Number):
+        raise Exception('Expected nutcracker.set to return a number, but got: {0}'.format(response))
+    return response
 
 def _create_delete(key_count, redis_to_shutdown, riak_to_shutdown):
     (riak_client, riak_bucket, nutcracker, redis) = getconn()
@@ -24,11 +31,9 @@ def _create_delete(key_count, redis_to_shutdown, riak_to_shutdown):
 
     keys_created = 0
     for i, key in enumerate(nc_keys):
-        write_func = lambda: nutcracker.set(key, key)
-        try:
-            keys_created += retry_write(write_func)
-        except TypeError:
-            pass
+        write_func = lambda: _set_expecting_numeric_response(nutcracker, key, key)
+        keys_created += retry_write(write_func)
+
     assert_equal(len(nc_keys), keys_created)
 
     for i, key in enumerate(nc_keys):

@@ -308,6 +308,7 @@ done:
     msg->has_vclock = 0;
     msg->vclock.data = NULL;
     msg->vclock.len = 0;
+    msg->read_before_write = 0;
 
     return msg;
 }

@@ -286,6 +286,12 @@ stats_pool_reset(struct array *stats_pool)
             struct stats_server *sts = array_get(&stp->server, j);
             stats_metric_reset(&sts->metric);
         }
+
+        nserver = array_n(&stp->server_be);
+        for (j = 0; j < nserver; j++) {
+            struct stats_server *sts = array_get(&stp->server_be, j);
+            stats_metric_reset(&sts->metric);
+        }
     }
 }
 
@@ -329,6 +335,7 @@ stats_pool_unmap(struct array *stats_pool)
         struct stats_pool *stp = array_pop(stats_pool);
         stats_metric_deinit(&stp->metric);
         stats_server_unmap(&stp->server);
+        stats_server_unmap(&stp->server_be);
     }
     array_deinit(stats_pool);
 
