@@ -11,7 +11,7 @@ def assert_equal_approximately(v1, v2):
     d = abs(v1 - v2) / 0.1
     assert d <= abs(v1) and d <= abs(v2)
 
-def asser_stat(redis_commands, riak_commands):
+def assert_stat(redis_commands, riak_commands):
     time.sleep(1) # wait until statistics ready
     stat = nc._info_dict()
     max_connections = 2 + len(riak_cluster.node_names()) + len(all_redis)
@@ -79,13 +79,13 @@ def test_nc_stat():
     (_, _, nutcracker, _) = getconn()
     nc.stop() #reset counters
     nc.start()
-    asser_stat(0, 0)
+    assert_stat(0, 0)
 
     kv = {'kkk-%s' % i :'vvv-%s' % i for i in range(tets_len)}
     for k, v in kv.items():
         nutcracker.set(k, v)
         nutcracker.get(k)
-    asser_stat(tets_len, 0)
+    assert_stat(tets_len, 0)
 
     bkv = {'bbb:kkk-%s' % i :'vvv-%s' % i for i in range(tets_len)}
     for k, v in bkv.items():
@@ -93,4 +93,4 @@ def test_nc_stat():
     time.sleep(3) # wait until data expire in frontend
     for k, v in bkv.items():
         nutcracker.get(k)
-    asser_stat(tets_len, tets_len)
+    assert_stat(tets_len, tets_len)
