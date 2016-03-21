@@ -45,6 +45,7 @@ class RiakCluster:
                 break
             if time.time() - t1 > max_wait:
                 break
+            time.sleep(1)
         t2 = time.time()
         logging.info('%s start ok in %.2f seconds' % (self, t2 - t1))
 
@@ -67,6 +68,7 @@ class RiakCluster:
                 break
             if time.time() - t1 > max_wait:
                 break
+            time.sleep(1)
         t2 = time.time()
         logging.info('%s stop ok in %.2f seconds' %(self, t2 - t1))
 
@@ -169,8 +171,15 @@ class RiakCluster:
     def restore(self):
         if len(self._shutdowned_nodes) == 0:
             return True
-        ret = self._nodes_command(self._shutdowned_nodes, './_binaries/service_riak_nodes.sh start', 3)
+        t = time.time()
+        max_wait = 60
+        while not self._alive():
+            ret = self._nodes_command(self._shutdowned_nodes, './_binaries/service_riak_nodes.sh start', 3)
+            if time.time() - t > max_wait:
+                ret = 1
+                break
+            time.sleep(1)
         self._shutdowned_nodes = []
-        if len(self.node_name_ports()) > 1:
+        if len(self.node_name_ports()) > 1 and ret == 0:
             self._cluster_command('./_binaries/create_riak_cluster.sh', 3)
         return 0 == ret
