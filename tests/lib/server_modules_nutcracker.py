@@ -14,7 +14,8 @@ from server_modules import *
 
 class NutCracker(ServerBase):
     def __init__(self, host, port, path, cluster_name, masters, mbuf=512,
-            verbose=5, is_redis=True, redis_auth=None, riak_cluster=None):
+            verbose=5, is_redis=True, redis_auth=None, riak_cluster=None,
+            auto_eject=False):
         ServerBase.__init__(self, 'nutcracker', host, port, path)
 
         self.masters = masters
@@ -36,6 +37,7 @@ class NutCracker(ServerBase):
         self.args['cluster_name']= cluster_name
         self.args['is_redis']= str(is_redis).lower()
         self.args['riak_cluster']= riak_cluster
+        self.args['auto_eject']= str(auto_eject).lower()
         # HACK: await successful ping, otherwise getting requests ahead of the
         # service being up and running.
         self._alive()
@@ -53,18 +55,21 @@ class NutCracker(ServerBase):
         if riak_cluster == None:
             return ''
 
-        server_template = '''
-    - $host:$port:1
+        server_template = '''    - $host:$port:1
 '''
         template = '''
   backend_type: riak
   backend_max_resend: 2
-  backends: $backends
+  backends:
+$backends
 '''
-        server_cfg = TT(server_template, {
-            'host': riak_cluster.host(),
-            'port': riak_cluster.port()
-            })
+        node_names = riak_cluster.node_names()
+        server_cfg = ''
+        for node_name in node_names: 
+            server_cfg = server_cfg + TT(server_template, {
+                'host': riak_cluster.host(),
+                'port': riak_cluster.port_from_node_name(node_name)
+                })
 
         return TT(template, { 'backends': server_cfg })
 
@@ -73,16 +78,16 @@ class NutCracker(ServerBase):
 $cluster_name:
   listen: 0.0.0.0:$port
   hash: fnv1a_64
-  distribution: modula
+  distribution: ketama
   preconnect: true
-  auto_eject_hosts: false
   redis: $is_redis
   backlog: 512
-  timeout: 400
+  timeout: 4000
   client_connections: 0
   server_connections: 1
+  auto_eject_hosts: $auto_eject
   server_retry_timeout: 2000
-  server_failure_limit: 2
+  server_failure_limit: 1
   server_ttl: 500ms
   servers:
 '''

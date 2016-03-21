@@ -20,7 +20,7 @@ fi
 TMP_DEVREL_DEST=/tmp/r/riak_devrel
 DEVREL_TARBALL="$DIR/riak_devrel.tar.gz"
 
-rm $DEVREL_TARBALL
+rm -f $DEVREL_TARBALL
 
 mkdir -p $TMP_DEVREL_DEST >/dev/null 2>&1
 

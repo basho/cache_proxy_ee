@@ -26,15 +26,15 @@ def test_mget_mset(kv=default_kv):
     #mget to check
     vals = r.mget(keys)
     for i, k in enumerate(keys):
-        assert(kv[k] == vals[i])
+        assert_equal(kv[k], vals[i])
 
-    assert (len(keys) == r.delete(*keys) )
+    assert_equal(len(keys), r.delete(*keys) )
 
     #mget again
     vals = r.mget(keys)
 
     for i, k in enumerate(keys):
-        assert(None == vals[i])
+        assert_equal(None, vals[i])
 
 def test_mget_mset_on_key_not_exist(kv=default_kv):
     r = getconn()
@@ -62,17 +62,17 @@ def test_mget_mset_on_key_not_exist(kv=default_kv):
     vals = r.mget(keys)
     for i, k in enumerate(keys):
         if k in kv:
-            assert(kv[k] == vals[i])
+            assert_equal(kv[k], vals[i])
         else:
-            assert(vals[i] == None)
+            assert_equal(None, vals[i])
 
-    assert (len(kv) == r.delete(*keys) )
+    assert_equal(len(kv), r.delete(*keys) )
 
     #mget again
     vals = r.mget(keys)
 
     for i, k in enumerate(keys):
-        assert(None == vals[i])
+        assert_equal(None, vals[i])
 
 def test_mget_mset_large():
     for cnt in range(171, large, 171):
@@ -108,15 +108,28 @@ def test_mget_on_backend_down():
 
     all_redis[0].stop()
 
-    assert_fail('Connection refused|reset by peer|Broken pipe', r.mget, 'key-1')
-    assert_fail('Connection refused|reset by peer|Broken pipe', r.get, 'key-1')
-    assert_equal(None, r.get('key-2'))
+    actual_fails = 0
+    for i in range(1, len(all_redis)):
+        try:
+            assert_fail('Connection refused|reset by peer|Broken pipe', r.mget, 'key-1')
+            assert_fail('Connection refused|reset by peer|Broken pipe', r.get, 'key-1')
+        except:
+            actual_fails += 1
+    assert_not_equal(0, actual_fails)
 
     keys = ['key-1', 'key-2', 'kkk-3']
-    assert_fail('Connection refused|reset by peer|Broken pipe', r.mget, *keys)
+    actual_fails = 0
+    for i in range(1, len(all_redis)):
+        try:
+            assert_fail('Connection refused|reset by peer|Broken pipe', r.mget, *keys)
+        except:
+            actual_fails += 1
+    assert_not_equal(0, actual_fails)
 
     #all backend down
-    all_redis[1].stop()
+    for i in range(1, len(all_redis)):
+        all_redis[i].stop()
+
     r = redis.Redis(nc.host(), nc.port())
 
     assert_fail('Connection refused|reset by peer|Broken pipe', r.mget, 'key-1')
@@ -132,9 +145,17 @@ def test_mset_on_backend_down():
     all_redis[0].stop()
     r = redis.Redis(nc.host(),nc.port())
 
-    assert_fail('Connection refused|Broken pipe',r.mset,default_kv)
+    actual_fails = 0
+    for i in range(1, len(all_redis)):
+        try:
+            assert_fail('Connection refused|Broken pipe',r.mset,default_kv)
+        except:
+            actual_fails += 1
+    assert_not_equal(0, actual_fails)
 
-    all_redis[1].stop()
+    for i in range(1, len(all_redis)):
+        all_redis[i].stop()
+
     assert_fail('Connection refused|Broken pipe',r.mset,default_kv)
 
     for r in all_redis:
@@ -164,67 +185,96 @@ def test_mget_pipeline():
     #mget to check
     vals = r.mget(keys)
     for i, k in enumerate(keys):
-        assert(kv[k] == vals[i])
+        assert_equal(kv[k], vals[i])
 
-    assert (len(keys) == r.delete(*keys) )
+    assert_equal(len(keys), r.delete(*keys))
 
     #mget again
     vals = r.mget(keys)
 
     for i, k in enumerate(keys):
-        assert(None == vals[i])
+        assert_equal(None, vals[i])
 
 def test_multi_delete_normal():
     r = getconn()
 
-    for i in range(100):
-        r.set('key-%s'%i, 'val-%s'%i)
-    for i in range(100):
-        assert_equal('val-%s'%i, r.get('key-%s'%i) )
+    kvs = { 'key-%i' % i: 'val-%i' % i for i in range(100) }
+    keys = kvs.keys()
 
-    keys = ['key-%s'%i for i in range(100)]
-    assert_equal(100, r.delete(*keys))
+    r.mset(kvs)
+    vals = r.mget(keys)
+    assert_equal(len(kvs), reduce(lambda agg, it: agg + (it != None), vals, 0))
 
-    for i in range(100):
-        assert_equal(None, r.get('key-%s'%i) )
+    assert_equal(len(kvs), r.delete(*keys))
+
+    vals = r.mget(keys)
+    assert_equal(100, reduce(lambda agg, it: agg + (it == None), vals, 0))
 
 def test_multi_delete_on_readonly():
     all_redis[0].slaveof(all_redis[1].args['host'], all_redis[1].args['port'])
 
     r = redis.Redis(nc.host(), nc.port())
 
-    # got "READONLY You can't write against a read only slave"
-    assert_fail('READONLY|Invalid', r.delete, 'key-1')
-    assert_equal(0, r.delete('key-2'))
-    assert_fail('READONLY|Invalid', r.delete, 'key-3')
+    keys = ['key-1', 'key-2', 'key-3']
 
-    keys = ['key-1', 'key-2', 'kkk-3']
-    assert_fail('Invalid argument', r.delete, *keys)     # got "Invalid argument"
+    actual_fails = 0
+    for key in keys:
+        for i in range(0, len(all_redis)):
+            try:
+                # got "READONLY You can't write against a read only slave"
+                assert_fail('READONLY|Invalid', r.delete, key)
+            except:
+                actual_fails += 1
+        assert_not_equal(0, actual_fails)
+
+    actual_fails = 0
+    for i in range(0, len(all_redis)):
+        try:
+            assert_fail('READONLY|Invalid', r.delete, *keys)     # got "Invalid argument"
+        except:
+            actual_fails += 1
+    assert_not_equal(0, actual_fails)
 
 def test_multi_delete_on_backend_down():
     #one backend down
     all_redis[0].stop()
     r = redis.Redis(nc.host(), nc.port())
 
-    assert_fail('Connection refused|reset by peer|Broken pipe', r.delete, 'key-1')
-    assert_equal(None, r.get('key-2'))
-
     keys = ['key-1', 'key-2', 'kkk-3']
-    assert_fail('Connection refused|reset by peer|Broken pipe', r.delete, *keys)
+    # count the fails, should not attempt a match on the number of fails because config of
+    # fault tolerance should be another test
+    for i in range(0, len(all_redis)):
+        actual_fails = 0
+        for key in keys:
+            try:
+                assert_fail('Connection refused|reset by peer|Broken pipe', r.delete, key)
+                assert_equal(None, r.get(key))
+            except:
+                actual_fails += 1
+        assert_not_equal(0, actual_fails)
+
+    # if the downed backend is ejected, this assertion will not hold
+    actual_fails = 0
+    for i in range(0, len(all_redis)):
+        try:
+            assert_fail('Connection refused|reset by peer|Broken pipe', r.delete, *keys)
+        except:
+            actual_fails += 1
+    assert_not_equal(0, actual_fails)
 
     #all backend down
-    all_redis[1].stop()
+    for i in range(1, len(all_redis)):
+        all_redis[i].stop()
+
     r = redis.Redis(nc.host(), nc.port())
 
-    assert_fail('Connection refused|reset by peer|Broken pipe', r.delete, 'key-1')
-    assert_fail('Connection refused|reset by peer|Broken pipe', r.delete, 'key-2')
+    for key in keys:
+        assert_fail('Connection refused|reset by peer|Broken pipe', r.delete, key)
 
-    keys = ['key-1', 'key-2', 'kkk-3']
     assert_fail('Connection refused|reset by peer|Broken pipe', r.delete, *keys)
 
     for r in all_redis:
         r.start()
-
 
 def test_multi_delete_20140525():
     r = getconn()

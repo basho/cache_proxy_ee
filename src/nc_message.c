@@ -227,7 +227,13 @@ _msg_get(void)
     msg->backend_resend_servers = NULL;
 
 done:
-    /* c_tqe, s_tqe, and m_tqe are left uninitialized */
+    msg->s_tqe.tqe_next = NULL;
+    msg->s_tqe.tqe_prev = NULL;
+    msg->c_tqe.tqe_next = NULL;
+    msg->c_tqe.tqe_prev = NULL;
+    msg->m_tqe.tqe_next = NULL;
+    msg->m_tqe.tqe_prev = NULL;
+
     msg->id = ++msg_id;
     msg->peer = NULL;
     msg->owner = NULL;
@@ -302,6 +308,7 @@ done:
     msg->has_vclock = 0;
     msg->vclock.data = NULL;
     msg->vclock.len = 0;
+    msg->read_before_write = 0;
 
     return msg;
 }
@@ -1055,7 +1062,7 @@ msg_content_clone(struct msg *src)
     }
     content[mlen] = '\0';
 
-    if ((status = msg_append(dest, (uint8_t *)content, mlen)) != NC_OK) {
+    if ((status = msg_copy(dest, (uint8_t *)content, mlen)) != NC_OK) {
         nc_free(content);
         msg_put(dest);
         if (pdest != NULL) {
@@ -1321,7 +1328,7 @@ msg_offset_from(struct msg_pos* start_pos, uint32_t offset,
 
     ASSERT(res_pos != NULL);
 
-    size_t mbuf_size = 0;
+    size_t mb_size = 0;
     size_t remaining_offset = offset;
     uint8_t *start_ptr = 0;
 
@@ -1335,16 +1342,16 @@ msg_offset_from(struct msg_pos* start_pos, uint32_t offset,
             start_ptr = mbuf->start;
         }
 
-        mbuf_size = (size_t)(mbuf->last - start_ptr);
+        mb_size = (size_t)(mbuf->last - start_ptr);
 
-        if (mbuf_size >= remaining_offset) {
+        if (mb_size >= remaining_offset) {
             res_pos->msg = start_pos->msg;
             res_pos->mbuf = mbuf;
             res_pos->ptr = start_ptr + remaining_offset;
             res_pos->result = MSG_FOUND;
             return;
         } else {
-            remaining_offset -= mbuf_size;
+            remaining_offset -= mb_size;
         }
     }
 

@@ -295,11 +295,11 @@ backend_enqueue_post_msg(void *elem /*struct msg *msg*/,
     s_conn->dequeue_outq(ctx, s_conn, msgp);
     c_conn->dequeue_outq(ctx, c_conn, msgp);
 
-    c_conn->enqueue_outq(ctx, c_conn, msg);
-    s_conn->enqueue_inq(ctx, s_conn, msg);
-
     msg->noreply = 0;
     s_conn->req_remap(s_conn, msg);
+
+    c_conn->enqueue_outq(ctx, c_conn, msg);
+    s_conn->enqueue_inq(ctx, s_conn, msg);
 
     return status;
 }
@@ -370,13 +370,15 @@ process_backend_rsp(struct context *ctx, struct conn *s_conn, struct msg* msg)
         break;
 
     case MSG_RSP_RIAK_INTEGER:
-        pmsg->integer += msg->integer;
+        pmsg->frag_owner->integer += msg->integer;
         pmsg->nfrag_done++;
         if (pmsg->nfrag_done < pmsg->nfrag) {
             break;
         }
+        pmsg->integer = pmsg->frag_owner->integer;
         forward_response(ctx, c_conn, s_conn, pmsg, msg);
         add_pexpire_msg(ctx, c_conn, msg);
+
         break;
 
     default:
@@ -442,11 +444,11 @@ add_pexpire_msg(struct context *ctx, struct conn* c_conn, struct msg* msg)
  */
 rstatus_t
 add_pexpire_msg_key(struct context *ctx, struct conn* c_conn, char* keyname,
-                    uint32_t keynamelen, uint32_t time)
+                    uint32_t keynamelen, uint32_t timeout)
 {
     const char pexipire_begin_proto[] = "*3\r\n$7\r\npexpire\r\n$%u\r\n";
     const char pexipire_finish_proto[] = "\r\n$%u\r\n%u\r\n";
-    uint32_t ntime_dig = ndig(time);
+    uint32_t ntime_dig = ndig(timeout);
     rstatus_t status;
     struct conn* s_conn = server_pool_conn_frontend(ctx, c_conn->owner,
                                                     (uint8_t*)keyname,
@@ -458,12 +460,14 @@ add_pexpire_msg_key(struct context *ctx, struct conn* c_conn, char* keyname,
                                                           pexipire_begin_proto,
                                                           keynamelen);
     ASSERT(pexipire_begin_len == sizeof(pexipire_begin) - 1);
+    UNUSED(pexipire_begin_len);
 
     char pexipire_finish[sizeof(pexipire_finish_proto) - 4 + ndig(ntime_dig)
                          + ntime_dig];
     const uint32_t pexipire_finish_len = (uint32_t)sprintf(
-            pexipire_finish, pexipire_finish_proto, ntime_dig, time);
+            pexipire_finish, pexipire_finish_proto, ntime_dig, timeout);
     ASSERT(pexipire_finish_len == sizeof(pexipire_finish) - 1);
+    UNUSED(pexipire_finish_len);
 
     struct msg* msg = msg_get(c_conn, true);
     if (msg == NULL) {
