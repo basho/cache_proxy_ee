@@ -12,11 +12,7 @@ def _set_expecting_numeric_response(nutcracker, key, value):
         raise Exception('Expected nutcracker.set to return a number, but got: {0}'.format(response))
     return response
 
-def _create_delete(key_count, redis_to_shutdown, riak_to_shutdown):
-    (riak_client, riak_bucket, nutcracker, redis) = getconn()
-    shutdown_redis_nodes(redis_to_shutdown)
-    shutdown_riak_nodes(riak_to_shutdown)
-
+def _create_delete_run(key_count, riak_client, riak_bucket, nutcracker, redis):
     keys = [ distinct_key() for i in range(0, key_count)]
     nc_keys = []
 
@@ -45,9 +41,6 @@ def _create_delete(key_count, redis_to_shutdown, riak_to_shutdown):
     del_response = retry_write(delete_func)
     assert_equal(len(nc_keys), del_response)
 
-    restore_redis_nodes()
-    restore_riak_nodes()
-
     failed_to_delete = 0
     for i, key in enumerate(nc_keys):
         riak_read_func = lambda : riak_bucket.get(key)
@@ -56,6 +49,18 @@ def _create_delete(key_count, redis_to_shutdown, riak_to_shutdown):
             failed_to_delete += 1
             continue
     assert_equal(0, failed_to_delete)
+
+def _create_delete(key_count, redis_to_shutdown, riak_to_shutdown):
+    (riak_client, riak_bucket, nutcracker, redis) = getconn()
+    shutdown_redis_nodes(redis_to_shutdown)
+    shutdown_riak_nodes(riak_to_shutdown)
+    try:
+        _create_delete_run(key_count, riak_client, riak_bucket, nutcracker, redis)
+    except:
+        raise
+    finally:
+        restore_redis_nodes()
+        restore_riak_nodes()
 
 def test_happy_path():
     _create_delete(riak_many_n, 0, 0)
