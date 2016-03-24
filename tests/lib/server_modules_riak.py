@@ -131,7 +131,7 @@ class RiakCluster:
         ret = 1
         outfile = getenv('T_RIAK_TEST_LOG', os.devnull)
         with open(outfile, 'a') as devnull:
-            ret = subprocess.check_call(raw_cmd.split(), stdout=devnull, stderr=subprocess.STDOUT)
+            ret = subprocess.call(raw_cmd.split(), stdout=devnull, stderr=subprocess.STDOUT)
         logging.debug('[%d] %s' % (ret, raw_cmd))
         return ret
 
