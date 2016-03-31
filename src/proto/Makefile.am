@@ -15,5 +15,7 @@ libproto_a_SOURCES =			\
 	nc_memcache.c			    \
 	nc_redis.c                  \
 	nc_riak.c                   \
+	nc_riak_sets.c              \
 	riak_kv.pb-c.c              \
+	riak_dt.pb-c.c              \
 	riak.pb-c.c

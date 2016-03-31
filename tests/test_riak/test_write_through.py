@@ -7,10 +7,16 @@ import time
 import redis
 
 def test_write_through_create():
-    (riak_client, riak_bucket, nutcracker, redis) = getconn()
+    _test_write_through_create()
+
+def test_write_through_create_with_dtype():
+    _test_write_through_create(bucket_type = 'strings')
+
+def _test_write_through_create(bucket_type = 'default'):
+    (riak_client, riak_bucket, nutcracker, redis) = getconn(bucket_type)
     key = distinct_key()
     value = distinct_key()
-    nc_key = nutcracker_key(key)
+    nc_key = nutcracker_key(key, riak_bucket)
     write_func = lambda : nutcracker.set(nc_key, value)
     read_func = lambda : nutcracker.get(nc_key)
     redis_delete_func = lambda : redis.delete(nc_key)
@@ -57,9 +63,15 @@ def test_write_through_bucketless_create():
     assert_equal(value, value_readback)
 
 def test_write_through_update():
-    (riak_client, riak_bucket, nutcracker, redis) = getconn()
+    _test_write_through_update()
+
+def test_write_through_update_with_dtype():
+    _test_write_through_update(bucket_type = 'strings')
+
+def _test_write_through_update(bucket_type = 'default'):
+    (riak_client, riak_bucket, nutcracker, redis) = getconn(bucket_type)
     key = distinct_key()
-    nc_key = nutcracker_key(key)
+    nc_key = nutcracker_key(key, riak_bucket)
     value = distinct_value()
     create_siblings(key)
     write_func = lambda : nutcracker.set(nc_key, value)
@@ -79,16 +91,19 @@ def test_write_through_update():
 def test_delete_single():
     _delete(1)
 
+def test_delete_single_with_dtype():
+    _delete(1, bucket_type = 'strings')
+
 def test_delete_multi():
     _delete(riak_multi_n)
 
 def test_delete_many():
     _delete(riak_many_n)
 
-def _delete(key_count):
-    (riak_client, riak_bucket, nutcracker, redis) = getconn()
+def _delete(key_count, bucket_type = 'default'):
+    (riak_client, riak_bucket, nutcracker, redis) = getconn(bucket_type)
     keys = [ distinct_key() for i in range(0, key_count)]
-    nc_keys = [ nutcracker_key(key) for key in keys ]
+    nc_keys = [ nutcracker_key(key, riak_bucket) for key in keys ]
 
     for i, key in enumerate(keys):
         riak_read_func = lambda : riak_bucket.get(key)

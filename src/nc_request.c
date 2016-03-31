@@ -660,6 +660,9 @@ req_forward(struct context *ctx, struct conn *c_conn, struct msg *msg, bool back
 
     case NC_EBADREQ:
         switch (msg->type) {
+        case MSG_REQ_REDIS_SMEMBERS:
+        case MSG_REQ_REDIS_SISMEMBER:
+        case MSG_REQ_REDIS_SCARD:
         case MSG_REQ_REDIS_GET:
             msg->error = 1;
             return;
@@ -940,9 +943,9 @@ should_forward_req_to_backend(struct conn *c_conn, struct msg* msg)
 
     switch(msg->type) {
     case MSG_REQ_REDIS_SET:
-        return true;
-
     case MSG_REQ_REDIS_DEL:
+    case MSG_REQ_REDIS_SADD:
+    case MSG_REQ_REDIS_SREM:
         return true;
 
     default:

@@ -10,6 +10,7 @@ import sys
 from utils import *
 import conf
 import subprocess
+from riak import RiakError
 
 # NOTE: did not derive from ServerBase as the Riak cluster is easier to manage
 # as duck equivalent instead of actually inheritence chain equivalence.
@@ -47,6 +48,9 @@ class RiakCluster:
                 break
         t2 = time.time()
         logging.info('%s start ok in %.2f seconds' % (self, t2 - t1))
+        self._ensure_string_dt()
+        self._ensure_set_dt()
+        logging.info('set bucket-type exists, observe, add, remove away!')
 
         if len(self.node_name_ports()) > 1:
             self._cluster_command('./_binaries/create_riak_cluster.sh', 3)
@@ -130,7 +134,7 @@ class RiakCluster:
         ret = 1
         outfile = getenv('T_RIAK_TEST_LOG', os.devnull)
         with open(outfile, 'a') as devnull:
-            ret = subprocess.check_call(raw_cmd.split(), stdout=devnull, stderr=subprocess.STDOUT)
+            ret = subprocess.call(raw_cmd.split(), stdout=devnull, stderr=subprocess.STDOUT)
         logging.debug('[%d] %s' % (ret, raw_cmd))
         return ret
 
@@ -138,7 +142,7 @@ class RiakCluster:
         pass
 
     def base_dir(self):
-        return '/tmp/r/'
+        return '/tmp/r'
 
     def host(self):
         return '127.0.0.1'
@@ -174,3 +178,50 @@ class RiakCluster:
         if len(self.node_name_ports()) > 1:
             self._cluster_command('./_binaries/create_riak_cluster.sh', 3)
         return 0 == ret
+
+    def _ensure_string_dt(self):
+        node_name = self.node_names()[0]
+        self.__alive() or self.start()
+        bucket_type_options = { \
+            'devrel_path': self._devrel_path(node_name) \
+            ,'bucket_type': "strings" \
+            ,'bucket_type_props': '{"props":{}}' \
+        }
+
+        if 0 == self._run(TT('$devrel_path/bin/riak-admin bucket-type status $bucket_type', \
+                bucket_type_options)):
+                return
+                
+        if 0 != self._run(TT('$devrel_path/bin/riak-admin bucket-type create $bucket_type $bucket_type_props', \
+                bucket_type_options)):
+                raise RiakError('Unable to create set bucket_type')
+
+        if 0 != self._run(TT('$devrel_path/bin/riak-admin bucket-type activate $bucket_type', \
+                bucket_type_options)):
+                raise RiakError('Unable to activate set bucket_type')
+
+    def _ensure_dt_bucket_type(self, bucket_type_name, datatype):
+        node_name = self.node_names()[0]
+        self.__alive() or self.start()
+        bucket_type_options = { \
+            'devrel_path': self._devrel_path(node_name) \
+            ,'bucket_type': bucket_type_name \
+            ,'bucket_type_props': '{"props":{"datatype":"' + datatype + '"}}' \
+        }
+
+        if 0 == self._run(TT('$devrel_path/bin/riak-admin bucket-type status $bucket_type', \
+                bucket_type_options)):
+                return
+                
+        if 0 != self._run(TT('$devrel_path/bin/riak-admin bucket-type create $bucket_type $bucket_type_props', \
+                bucket_type_options)):
+                raise RiakError('Unable to create set bucket_type')
+
+        if 0 != self._run(TT('$devrel_path/bin/riak-admin bucket-type activate $bucket_type', \
+                bucket_type_options)):
+                raise RiakError('Unable to activate set bucket_type')
+
+    def _ensure_set_dt(self):
+        # TODO: set bucket-type name should be arbitrary, but it is hardcoded
+        # in cache proxy. we may be okay with that, but follow up
+        self._ensure_dt_bucket_type('sets', 'set')

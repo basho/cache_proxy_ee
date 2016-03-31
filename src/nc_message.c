@@ -293,6 +293,7 @@ done:
     msg->rnarg = 0;
     msg->rlen = 0;
     msg->integer = 0;
+    msg->nsubs = 0;
 
     msg->err = 0;
     msg->error = 0;
@@ -309,6 +310,8 @@ done:
     msg->vclock.data = NULL;
     msg->vclock.len = 0;
     msg->read_before_write = 0;
+    msg->stored_arg.data = NULL;
+    msg->stored_arg.len = 0;
 
     return msg;
 }
@@ -442,6 +445,8 @@ msg_free(struct msg *msg)
         msg->msgs_post = NULL;
     }
 
+    msg_free_stored_arg(msg);
+
     log_debug(LOG_VVERB, "free msg %p id %"PRIu64"", msg, msg->id);
     nc_free(msg);
 }
@@ -551,36 +556,21 @@ msg_empty(struct msg *msg)
 bool 
 msg_nil(struct msg *msg)
 {
-    struct mbuf *mbuf;
-    bool matches_nil;
-
+    const struct mbuf *mbuf = STAILQ_FIRST(&msg->mhdr);
     /* applies only to redis replies */
-    matches_nil = false;
     if (msg->type == MSG_RSP_REDIS_BULK) {
-        STAILQ_FOREACH(mbuf, &msg->mhdr, next) {
-            uint8_t nil[5] = {0x24, 0x2d, 0x31, 0x0d, 0x0a};
-            uint8_t *p, *q, cur;
-            long int len;
-
-            p = mbuf->start;
-            q = mbuf->last;
-            len = q - p;
-
-            /* dead-simple memory comparison of 5-byte responses against
-             * the value redis returns for nils */
-            if (len == 5) {
-                matches_nil = true;
-                for (cur=0; cur<5; ++cur) {
-                    if (*(p+cur) != *(nil+cur)) {
-                        matches_nil = false;
-                        break;
-                    }
-                }
-            }
+        if (mbuf->last - mbuf->start == 5) {
+            return str5cmp(mbuf->start, 0x24, 0x2d, 0x31, 0x0d, 0x0a);
         }
+    } else if (msg->type == MSG_RSP_REDIS_MULTIBULK) {
+        if (mbuf->last - mbuf->start == 4) {
+            return str4cmp(mbuf->start, 0x2a, 0x30, 0x0d, 0x0a);
+        }
+    } else if (msg->type == MSG_RSP_REDIS_INTEGER) {
+        return msg->integer == 0;
     }
 
-    return matches_nil;
+    return false;
 }
 
 uint32_t
@@ -1754,7 +1744,7 @@ msg_set_keypos(struct msg* req, uint32_t keyn, int start_offset, int len,
     if (req->keys == NULL) {
         return;
     }
-    if (array_n(req->keys) < keyn) {
+    if (array_n(req->keys) < keyn || array_n(req->keys) == 0) {
         return;
     }
     struct keypos *kpos = array_get(req->keys, keyn);
@@ -1794,5 +1784,15 @@ msg_copy_vclock(struct msg* msg, protobuf_c_boolean has_vclock,
             msg->vclock.data = nc_alloc(vclock.len);
             nc_memcpy(msg->vclock.data, vclock.data, vclock.len);
         }
+    }
+}
+
+void
+msg_free_stored_arg(struct msg* msg)
+{
+    if (msg->stored_arg.data != NULL) {
+        nc_free(msg->stored_arg.data);
+        msg->stored_arg.data = NULL;
+        msg->stored_arg.len = 0;
     }
 }
