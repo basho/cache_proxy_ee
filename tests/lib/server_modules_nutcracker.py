@@ -86,7 +86,7 @@ $cluster_name:
   client_connections: 0
   server_connections: 1
   auto_eject_hosts: $auto_eject
-  server_retry_timeout: 2000
+  server_retry_timeout: 20000
   server_failure_limit: 1
   server_ttl: 500ms
   servers:

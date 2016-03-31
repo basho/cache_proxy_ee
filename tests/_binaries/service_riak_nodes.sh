@@ -14,24 +14,34 @@ riak_command () {
     RET=$?
     return $RET
 }
-riak_start_postwait () {
-    NODE=$1
-    echo 'perforning riak-admin test following start'
-    RET=1
-    while [ "$RET" != "0" ]; do
-        $TMP_BASE$NODE/bin/riak-admin test
-        RET=$?
-        if [ "$RET" != "0" ]; then
-            sleep 1
-        fi
-    done
-}
 redirect_command () {
     if [ "$SILENT" != "0" ]; then
         "$@" >/dev/null 2>&1
     else
         "$@"
     fi
+}
+riak_start_postwait () {
+    NODE=$1
+    echo 'perforning riak-admin test following start'
+    RET=1
+    CNT=0
+    while [ "$RET" != "0" ]; do
+        CNT=$((CNT+1))
+        if [ $CNT -gt 60 ]; then
+            return 1
+        fi
+        redirect_command riak_command ping $NODE
+        if [ "$?" != "0" ]; then
+            redirect_command riak_command start $NODE
+        fi
+        $TMP_BASE$NODE/bin/riak-admin test
+        RET=$?
+        if [ "$RET" != "0" ]; then
+            sleep 1
+        fi
+    done
+    return $RET
 }
 RIAK_COMMAND=$1
 shift
