@@ -23,7 +23,6 @@ class RiakCluster:
                 'name'             : 'riak',
                 'node_name_ports'  : node_name_ports,
                 }
-        self._shutdowned_nodes = []
 
     def __str__(self):
         return TT('[$name:$node_name_ports]', self.args)
@@ -45,6 +44,7 @@ class RiakCluster:
                 break
             if time.time() - t1 > max_wait:
                 break
+            time.sleep(1)
         t2 = time.time()
         logging.info('%s start ok in %.2f seconds' % (self, t2 - t1))
 
@@ -67,6 +67,7 @@ class RiakCluster:
                 break
             if time.time() - t1 > max_wait:
                 break
+            time.sleep(1)
         t2 = time.time()
         logging.info('%s stop ok in %.2f seconds' %(self, t2 - t1))
 
@@ -79,10 +80,10 @@ class RiakCluster:
         ret = self._cluster_command('./_binaries/service_riak_nodes.sh stop', 3)
         return 0 == ret
 
-    def _cluster_command(self, command_script, retries = 0, retry_delay = 0.1):
+    def _cluster_command(self, command_script, retries = 0, retry_delay = 1):
         return self._nodes_command(self.node_names(), command_script, retries, retry_delay)
 
-    def _nodes_command(self, node_names, command_script, retries = 0, retry_delay = 0.1):
+    def _nodes_command(self, node_names, command_script, retries = 0, retry_delay = 1):
         cmd_args = {
                 'command_script': command_script,
                 'node_names': ' '.join(node_names)
@@ -130,7 +131,7 @@ class RiakCluster:
         ret = 1
         outfile = getenv('T_RIAK_TEST_LOG', os.devnull)
         with open(outfile, 'a') as devnull:
-            ret = subprocess.check_call(raw_cmd.split(), stdout=devnull, stderr=subprocess.STDOUT)
+            ret = subprocess.call(raw_cmd.split(), stdout=devnull, stderr=subprocess.STDOUT)
         logging.debug('[%d] %s' % (ret, raw_cmd))
         return ret
 
@@ -162,15 +163,8 @@ class RiakCluster:
         return -1
 
     def shutdown(self, node_names):
-        self._shutdowned_nodes.extend(node_names);
         ret = self._nodes_command(node_names, './_binaries/service_riak_nodes.sh stop', 3)
         return 0 == ret
 
     def restore(self):
-        if len(self._shutdowned_nodes) == 0:
-            return True
-        ret = self._nodes_command(self._shutdowned_nodes, './_binaries/service_riak_nodes.sh start', 3)
-        self._shutdowned_nodes = []
-        if len(self.node_name_ports()) > 1:
-            self._cluster_command('./_binaries/create_riak_cluster.sh', 3)
-        return 0 == ret
+        self.start()

@@ -48,7 +48,7 @@ nc = NutCracker('127.0.0.1', 4210, '/tmp/r/nutcracker-4210', CLUSTER_NAME,
                 all_redis, mbuf=mbuf, verbose=nc_verbose, riak_cluster=riak_cluster,
                 auto_eject=True)
 
-def setup():
+def cluster_setup():
     print 'setup(mbuf=%s, verbose=%s)' %(mbuf, nc_verbose)
     riak_cluster.deploy()
     riak_cluster.start()
@@ -58,7 +58,7 @@ def setup():
         r.stop()
         r.start()
 
-def teardown():
+def cluster_teardown():
     for r in [nc, riak_cluster] + all_redis:
         if not r._alive():
             print('%s was not alive at teardown' % r)

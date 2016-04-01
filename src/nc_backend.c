@@ -686,6 +686,10 @@ get_next_backend_server(struct msg* msg, struct conn* c_conn, uint8_t* key,
         struct server_pool* pool = c_conn->owner;
         unsigned nserver = array_n(&pool->backends.server_arr);
         int nresend = 0;
+        int64_t now = nc_usec_now();
+        if (now < 0) {
+            return NULL;
+        }
 
         struct server* primary_server = servers_server(&pool->backends,
                                                        key, keylen);
@@ -697,13 +701,16 @@ get_next_backend_server(struct msg* msg, struct conn* c_conn, uint8_t* key,
             if (nresend == pool->backend_opt.max_resend - 1)
                 break;
 
+            if (pool->auto_eject_hosts && resend_server->next_retry > now)
+                continue;
+
             if (resend_server != primary_server) {
                 insert_in_backend_resend_q(msg, resend_server);
                 ++nresend;
             }
         }
 
-        insert_in_backend_resend_q(msg, primary_server);
+        return primary_server;
     }
 
     server = *((struct server**)array_pop(msg->backend_resend_servers));

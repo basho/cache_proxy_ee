@@ -1,4 +1,7 @@
 #!/bin/sh
+
+set -e
+
 usage () {
     echo "Usage: $0 NODE_NAME PB_PORT"
 }
