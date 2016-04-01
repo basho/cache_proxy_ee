@@ -11,7 +11,7 @@ from time import sleep
 def test_set_dt_empty():
     (riak_client, _, nutcracker, redis) = getconn()
     key = distinct_key()
-    nc_key = nutcracker_key(key)
+    nc_key = nutcracker_sets_key(key)
     riak_set = get_set_dt_object(riak_client, 'test', key)
     assert_equal(0, len(riak_set))
     value = retry_read(lambda: nutcracker.scard(nc_key))
@@ -20,7 +20,7 @@ def test_set_dt_empty():
 def test_set_dt_delete():
     (riak_client, _, nutcracker, redis) = getconn()
     key = distinct_key()
-    nc_key = nutcracker_key(key)
+    nc_key = nutcracker_sets_key(key)
     wrote = retry_write(lambda: nutcracker.sadd(nc_key, distinct_value()))
     value = retry_read(lambda: nutcracker.scard(nc_key))
     assert_equal(1, value)
@@ -31,7 +31,7 @@ def test_set_dt_delete():
 def test_set_dt_add_single():
     (riak_client, _, nutcracker, redis) = getconn()
     key = distinct_key()
-    nc_key = nutcracker_key(key)
+    nc_key = nutcracker_sets_key(key)
     add_values = [ distinct_value(), distinct_value(), distinct_value() ]
     remove_values = [ add_values[1] ]
     values = []
@@ -62,7 +62,7 @@ def test_set_dt_add_single():
 def test_set_dt_add_multi():
     (riak_client, _, nutcracker, redis) = getconn()
     key = distinct_key()
-    nc_key = nutcracker_key(key)
+    nc_key = nutcracker_sets_key(key)
     add_values = [ distinct_value(), distinct_value(), distinct_value() ]
     remove_values = [ add_values[1], add_values[0] ]
     values = []
@@ -101,7 +101,7 @@ def test_set_dt_add_multi():
 def test_set_dt_ttl():
     (riak_client, _, nutcracker, redis) = getconn()
     key = distinct_key()
-    nc_key = nutcracker_key(key)
+    nc_key = nutcracker_sets_key(key)
     add_values = [ distinct_value(), distinct_value() ]
     remove_values = []
     values = []
@@ -135,8 +135,8 @@ def test_set_dt_max_add():
 def _test_set_dt_max_add(n_to_add):
     (riak_client, _, nutcracker, redis) = getconn()
     key = distinct_key()
-    nc_key = nutcracker_key(key)
-    add_values = [ distinct_value() for i in range(0, n_to_add) ]
+    nc_key = nutcracker_sets_key(key)
+    add_values = set([ distinct_value() for i in range(0, n_to_add) ])
     remove_values = []
     values = []
 
@@ -160,13 +160,14 @@ def test_set_dt_max_items():
 def _test_set_dt_max_items(n_items):
     (riak_client, _, nutcracker, redis) = getconn()
     key = distinct_key()
-    nc_key = nutcracker_key(key)
+    nc_key = nutcracker_sets_key(key)
     
+    n_items_added = 0
     for i in range(0, n_items):
-        retry_write(lambda: nutcracker.sadd(nc_key, distinct_value()))
+        n_items_added += retry_write(lambda: nutcracker.sadd(nc_key, distinct_value()))
 
     nc_values = retry_read(lambda: nutcracker.smembers(nc_key))
-    assert_equal(n_items, len(nc_values))
+    assert_equal(n_items_added, len(nc_values))
 
 def get_set_dt_object(riak_client, bucket, key):
     set_dt_bucket = riak_client.bucket_type(bucket_type_name()).bucket(bucket)
@@ -175,3 +176,7 @@ def get_set_dt_object(riak_client, bucket, key):
 def bucket_type_name():
     #HACK: see riak server module code about arbitrary bucket-type name
     return 'sets'
+
+def nutcracker_sets_key(riak_key):
+    nc_key = nutcracker_key(riak_key)
+    return '%s:%s' % (bucket_type_name(), nc_key)
