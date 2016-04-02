@@ -22,49 +22,8 @@
 
 #include <nc_core.h>
 #include <nc_proto.h>
+#include <nc_riak_private.h>
 
-#include <riak_kv.pb-c.h>
-
-#define CONF_UNSET_NUM -1
-
-typedef enum {
-    REQ_RIAK_GET = 9,
-    REQ_RIAK_PUT = 11,
-    REQ_RIAK_DEL = 13,
-} riak_req_t;
-
-typedef enum {
-    RSP_RIAK_UNKNOWN = 0x0,
-    RSP_RIAK_GET = 10,
-    RSP_RIAK_PUT = 12,
-    RSP_RIAK_DEL = 14,
-} riak_rsp_t;
-
-void parse_pb_get_req(struct msg *r, uint32_t* len, uint8_t* msgid, RpbGetReq** req);
-void parse_pb_put_req(struct msg *r, uint32_t* len, uint8_t* msgid, RpbPutReq** req);
-
-bool get_pb_msglen(struct msg* r, uint32_t* len, uint8_t* msgid);
-bool get_pb_mbuflen(struct mbuf* mbuf, uint32_t* len, uint8_t* msgid);
-
-rstatus_t encode_pb_get_req(struct msg* r, struct conn* s_conn, msg_type_t type);
-rstatus_t _encode_pb_get_req(struct msg* r, struct conn* s_conn, msg_type_t type,
-                   unsigned read_before_write);
-rstatus_t encode_pb_put_req(struct msg* r, struct conn* s_conn, msg_type_t type);
-rstatus_t encode_pb_del_req(struct msg* r, struct conn* s_conn, msg_type_t type);
-
-RpbGetResp* extract_get_rsp(struct msg* r, uint32_t len, uint8_t* msgid);
-RpbPutResp* extract_put_rsp(struct msg* r, uint32_t len, uint8_t* msgid);
-bool extract_del_rsp(struct msg* r, uint32_t len, uint8_t* msgid);
-
-rstatus_t repack_get_rsp(struct msg* r, RpbGetResp* rpbresp);
-
-/*
- * Sibling resolution functions
- */
-
-unsigned choose_sibling(RpbGetResp* rpbresp);
-unsigned choose_last_modified_sibling(RpbGetResp* rpbresp);
-unsigned choose_random_sibling(unsigned nSib);
 
 /**.......................................................................
  * Stub to parse a request received from a Riak server.  We don't
@@ -142,13 +101,23 @@ riak_parse_rsp(struct msg *r)
          *        rpb_get_resp__free_unpacked(rpbresp);
          *    }
          * }
+         * break;
          */
-        break;
     case RSP_RIAK_PUT:
-        break;
+    case RSP_RIAK_DT_UPDATE:
+    case RSP_RIAK_DT_FETCH:
     case RSP_RIAK_DEL:
         /* DEL doesn't have response */
-        return;
+        break;
+    case RSP_RIAK_UNKNOWN:
+    {
+        // While removing non-existent values from we will have msgid equal 0
+        struct msg* pmsg = TAILQ_FIRST(&r->owner->omsg_q);
+        if (pmsg->type == MSG_REQ_RIAK_SREM) {
+            break;
+        }
+    }
+        /* no break */
     default:
         r->result = MSG_PARSE_ERROR;
         break;
@@ -391,6 +360,36 @@ riak_req_remap(struct conn* conn, struct msg* msg)
         }
         break;
 
+    case MSG_REQ_REDIS_SADD:
+        if ((status = encode_pb_sadd_req(msg, conn, MSG_REQ_RIAK_SADD)) != NC_OK) {
+            return status;
+        }
+    	break;
+
+    case MSG_REQ_REDIS_SREM:
+        if ((status = encode_pb_srem_req(msg, conn, MSG_REQ_RIAK_SREM)) != NC_OK) {
+            return status;
+        }
+        break;
+
+    case MSG_REQ_REDIS_SMEMBERS:
+        if ((status = encode_pb_smembers_req(msg, conn, MSG_REQ_RIAK_SMEMBERS)) != NC_OK) {
+            return status;
+        }
+        break;
+
+    case MSG_REQ_REDIS_SISMEMBER:
+        if ((status = encode_pb_sismember_req(msg, conn, MSG_REQ_RIAK_SISMEMBER)) != NC_OK) {
+            return status;
+        }
+        break;
+
+    case MSG_REQ_REDIS_SCARD:
+        if ((status = encode_pb_scard_req(msg, conn, MSG_REQ_RIAK_SCARD)) != NC_OK) {
+            return status;
+        }
+        break;
+
     default:
         return NC_ERROR;
     }
@@ -496,7 +495,6 @@ extract_bucket_key_value(struct msg *r,
         }
     }
 
-
     if (value != NULL) {
         if ((status = redis_get_next_string(r,
                                             keyname_start_pos, keyname_start_pos,
@@ -521,13 +519,12 @@ extract_bucket_key_value(struct msg *r,
     return NC_OK;
 }
 
-typedef size_t (*pack_func)(const void *message, uint8_t *out);
 /**.......................................................................
  * Pack the message into our mbufs
  */
 rstatus_t
 pack_message(struct msg *r, msg_type_t type, uint32_t msglen, uint8_t reqid,
-             pack_func func, const void *message, uint32_t bucketlen)
+             pb_pack_func func, const void *message, uint32_t bucketlen)
 {
     rstatus_t status;
     uint32_t netlen = htonl(msglen + 1);
@@ -554,7 +551,6 @@ pack_message(struct msg *r, msg_type_t type, uint32_t msglen, uint8_t reqid,
 
     struct mbuf* mbuf = STAILQ_FIRST(&r->mhdr);
     if (pbmsglen <= mbuf_size(mbuf)) {
-
         mbuf_rewind(mbuf);
 
         mbuf_copy(mbuf, (uint8_t*)&netlen, sizeof(netlen));
@@ -629,6 +625,10 @@ _encode_pb_get_req(struct msg* r, struct conn* s_conn, msg_type_t type,
         req.has_type = 1;
     }
 
+    if (req.type.len > 0) {
+        req.has_type = 1;
+    }
+
     struct server* server = (struct server*)(s_conn->owner);
     const struct server_pool* pool = (struct server_pool*)(server->owner);
     const struct backend_opt* opt = &pool->backend_opt;
@@ -683,7 +683,7 @@ _encode_pb_get_req(struct msg* r, struct conn* s_conn, msg_type_t type,
     int type_and_bucket_len = ((req.type.len > 0) ? req.type.len + 1 : 0)
             + ((req.bucket.len > 0) ? req.bucket.len : 0);
     status = pack_message(r, type, rpb_get_req__get_packed_size(&req),
-                          REQ_RIAK_GET, (pack_func) rpb_get_req__pack, &req,
+                          REQ_RIAK_GET, (pb_pack_func) rpb_get_req__pack, &req,
                           type_and_bucket_len);
     nc_free(req.type.data);
 
@@ -719,8 +719,8 @@ encode_pb_put_req(struct msg* r, struct conn* s_conn, msg_type_t type)
         req.has_type = 1;
     }
 
-    if (req.bucket.len <= 0) {
-        return NC_ERROR;
+    if (req.type.len > 0) {
+        req.has_type = 1;
     }
 
     struct server* server = (struct server*)(s_conn->owner);
@@ -773,7 +773,7 @@ encode_pb_put_req(struct msg* r, struct conn* s_conn, msg_type_t type)
     int type_and_bucket_len = ((req.type.len > 0) ? req.type.len + 1 : 0)
             + ((req.bucket.len > 0) ? req.bucket.len : 0);
     status = pack_message(r, type, rpb_put_req__get_packed_size(&req),
-                          REQ_RIAK_PUT, (pack_func) rpb_put_req__pack, &req,
+                          REQ_RIAK_PUT, (pb_pack_func) rpb_put_req__pack, &req,
                           type_and_bucket_len);
     nc_free(req.type.data);
     nc_free(req.content->value.data);
@@ -811,6 +811,7 @@ encode_pb_del_req(struct msg* r, struct conn* s_conn, msg_type_t type)
             if (req.type.len > 0) {
                 req.has_type = 1;
             }
+
             req.has_w = (opt->riak_w != CONF_UNSET_NUM);
             if (req.has_w) {
                 req.w = opt->riak_w;
@@ -848,7 +849,7 @@ encode_pb_del_req(struct msg* r, struct conn* s_conn, msg_type_t type)
                     ((req.type.len > 0) ? req.type.len + 1 : 0) + (
                             (req.bucket.len > 0) ? req.bucket.len : 0);
             status = pack_message(r, type, rpb_del_req__get_packed_size(&req),
-                                  REQ_RIAK_DEL, (pack_func)rpb_del_req__pack,
+                                  REQ_RIAK_DEL, (pb_pack_func)rpb_del_req__pack,
                                   &req, type_and_bucket_len);
             keys_number++;
         } else {
@@ -975,9 +976,16 @@ add_pexpire_msg_riak(struct context *ctx, struct conn* c_conn, struct msg* msg)
         if (req == NULL)
             return NC_ENOMEM;
 
-        const uint32_t keynamelen = req->bucket.len + req->key.len + 1;
+        const uint32_t delimiter_count = ((req->type.len > 0) ? 1 : 0)
+                                         + ((req->bucket.len > 0) ? 1 : 0);
+        const uint32_t keynamelen = req->type.len +
+                                    req->bucket.len +
+                                    req->key.len + delimiter_count;
         char keyname[keynamelen + 1];
-        sprintf(keyname, "%.*s:%.*s", (int)req->bucket.len, req->bucket.data,
+        sprintf(keyname, "%.*s%s%.*s:%.*s",
+                (int)req->type.len, req->type.data,
+                (req->type.len > 0) ? ":" : "",
+                (int)req->bucket.len, req->bucket.data,
                 (int)req->key.len, req->key.data);
 
         add_pexpire_msg_key(ctx, c_conn, keyname, keynamelen, 0);
@@ -1008,13 +1016,18 @@ add_set_msg_riak(struct context *ctx, struct conn* c_conn, struct msg* msg)
     RpbGetReq* req = 0;
     parse_pb_get_req(msg->peer, &len, &msgid, &req);
 
-    uint32_t keynamelen = req->bucket.len + req->key.len + 1;
+    int delimiter_count = ((req->type.len > 0) ? 1 : 0)
+                          + ((req->bucket.len > 0) ? 1 : 0);
+    uint32_t keynamelen = req->type.len + req->bucket.len + req->key.len + delimiter_count;
     char keyname[keynamelen + 1];
-    sprintf(keyname, "%.*s:%.*s", (int)req->bucket.len, req->bucket.data,
+    sprintf(keyname, "%.*s%s%.*s%s%.*s",
+            (int)req->type.len, req->type.data,
+            (req->type.len > 0) ? ":" : "",
+            (int)req->bucket.len, req->bucket.data,
+            (req->bucket.len > 0) ? ":" : "",
             (int)req->key.len, req->key.data);
 
-    if (req)
-        nc_free(req);
+    nc_free(req);
 
     struct msg_pos keyval_start_pos = msg_pos_init();
     size_t keyvallen = 0;
@@ -1028,8 +1041,6 @@ add_set_msg_riak(struct context *ctx, struct conn* c_conn, struct msg* msg)
     return add_set_msg_key(ctx, c_conn, keyname, &keyval_start_pos, keyvallen);
 }
 
-typedef void*
-(*unpack_func)(ProtobufCAllocator *allocator, size_t len, const uint8_t *data);
 /**.......................................................................
  * Extract a PB-encoded response out of the message buffer
  */
@@ -1049,12 +1060,12 @@ extract_rsp(struct msg* r, uint32_t len, uint8_t* msgid, unpack_func func,
      * the message from multiple mbufs, to pass to
      * rpb_get_resp__unpack below
      */
-    if (len + 4 > mbuf_data_size())
+    if (len + 4 > mbuf_data_size() && rpbresp) {
         allocs = r->mlen;
+    }
 
-    uint8_t sbuf[allocs];
     if (allocs) {
-        buf = sbuf;
+        buf = nc_alloc(allocs);
         if (msg_extract(r, buf, r->mlen) != NC_OK) {
             if (rpbresp) {
                 *rpbresp = NULL;
@@ -1078,6 +1089,9 @@ extract_rsp(struct msg* r, uint32_t len, uint8_t* msgid, unpack_func func,
 
     if (rpbresp) {
         *rpbresp = func(NULL, len - 1, pos);
+        if (allocs) {
+            nc_free(buf);
+        }
         return (*rpbresp) ? true : false;
     }
     return true;
@@ -1252,6 +1266,8 @@ riak_repack(struct msg* r)
 
     RpbGetResp* rpb_get_resp = NULL;
     RpbPutResp* rpb_put_resp = NULL;
+    DtUpdateResp* dt_update_resp = NULL;
+    DtFetchResp* dt_fetch_resp = NULL;
     uint32_t len = 0;
     uint8_t msgid = RSP_RIAK_UNKNOWN;
     if (!get_pb_msglen(r, &len, &msgid)) {
@@ -1307,6 +1323,47 @@ riak_repack(struct msg* r)
             r->result = MSG_PARSE_ERROR;
         }
     }
+        break;
+
+    case RSP_RIAK_UNKNOWN:
+    {
+        struct msg* pmsg = TAILQ_FIRST(&r->owner->omsg_q);
+        if (pmsg->type == MSG_REQ_RIAK_SREM) {
+            if (repack_dt_update_resp(r, dt_update_resp) != NC_OK) {
+                r->result = MSG_PARSE_ERROR;
+            }
+        }
+    }
+        break;
+
+    case RSP_RIAK_DT_UPDATE:
+        dt_update_resp = extract_dt_update_rsp(r, len, &msgid);
+
+        if (dt_update_resp == NULL) {
+            r->result = MSG_PARSE_ERROR;
+            break;
+        }
+
+        if (repack_dt_update_resp(r, dt_update_resp) != NC_OK) {
+            r->result = MSG_PARSE_ERROR;
+        }
+
+        dt_update_resp__free_unpacked(dt_update_resp, NULL);
+        break;
+
+    case RSP_RIAK_DT_FETCH:
+        dt_fetch_resp = extract_dt_fetch_rsp(r, len, &msgid);
+
+        if (dt_fetch_resp == NULL) {
+            r->result = MSG_PARSE_ERROR;
+            break;
+        }
+
+        if (repack_dt_fetch_resp(r, dt_fetch_resp) != NC_OK) {
+            r->result = MSG_PARSE_ERROR;
+        }
+
+        dt_fetch_resp__free_unpacked(dt_fetch_resp, NULL);
         break;
 
     default:
