@@ -597,9 +597,15 @@ add_set_msg_key(struct context *ctx, struct conn* c_conn, char* keyname,
     bool use_ttl = false;
     uint32_t ttl_ms = 0;
 
-    if (pool->server_ttl_ms > 0) {
+    ProtobufCBinaryData datatype;
+    ProtobufCBinaryData bucket;
+    ProtobufCBinaryData key;
+    nc_split_key_string((uint8_t*)keyname, keynamelen, &datatype, &bucket, &key);
+    int64_t sl_ttl_ms = server_pool_bucket_ttl(pool, bucket.data, (uint32_t)bucket.len);
+
+    if (sl_ttl_ms > 0) {
         use_ttl = true;
-        ttl_ms = (uint32_t)(pool->server_ttl_ms);
+        ttl_ms = (uint32_t)sl_ttl_ms;
         ttlndig = ndig(ttl_ms); /* Number of digits in ttl_ms (length of the number we will write) */
         ttlfmtlen = ndig(ttlndig) + 1; /* Number of digits in ttlndig (length of the formatted ttlndig) */
     }

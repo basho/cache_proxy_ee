@@ -453,42 +453,7 @@ extract_bucket_key_value(struct msg *r,
         }
 
         /* extract datatype, bucket and key from line */
-        datatype->data = data;
-        datatype->len = keynamelen;
-        bucket->data = NULL;
-        bucket->len = 0;
-        key->data = NULL;
-        key->len = 0;
-        uint8_t *pc = data;
-        uint8_t *ppc = pc;
-        uint8_t first_sep = 0;
-        while (*pc) {
-            if (*pc == ':') {
-                if (first_sep == 0) {
-                    datatype->len = pc - ppc;
-                    ppc = pc + 1;
-                    bucket->len = keynamelen - datatype->len - 1;
-                    bucket->data = bucket->len ? (pc + 1) : NULL;
-                    first_sep = 1;
-                } else {
-                    bucket->len = pc - ppc;
-                    key->data = pc + 1;
-                    if (*key->data) {
-                        key->len = keynamelen - datatype->len - bucket->len - 2;
-                    }
-                    break;
-                }
-            }
-            pc++;
-        }
-
-        while (key->len == 0 && bucket->len + datatype->len) {
-            key->data = bucket->data;
-            key->len = bucket->len;
-            bucket->data = datatype->data;
-            bucket->len = datatype->len;
-            datatype->len = 0;
-        }
+        nc_split_key_string(data, keynamelen, datatype, bucket, key);
 
         if (!allow_empty_bucket && bucket->len <= 0) {
             return NC_EBADREQ;

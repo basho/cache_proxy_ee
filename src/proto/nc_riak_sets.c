@@ -534,13 +534,14 @@ repack_dt_fetch_resp(struct msg* r, DtFetchResp* dtresp)
                                   (uint32_t)req->key.len, req->key.data);
         ASSERT(keylen == sizeof(key) - 1);
         dt_fetch_req__free_unpacked(req, NULL);
+        int64_t ttl = server_pool_bucket_ttl(pool, req->bucket.data, req->bucket.len);
 
         switch(pmsg->type) {
         case MSG_REQ_RIAK_SMEMBERS:
         case MSG_REQ_RIAK_SISMEMBER:
         case MSG_REQ_RIAK_SCARD:
             add_sadd_msg(ctx, c_conn, (uint8_t*)key, keylen, values, values_count, MSG_REQ_RIAK_SADD);
-            add_pexpire_msg_key(ctx, c_conn, (char *)key, keylen, pool->server_ttl_ms);
+            add_pexpire_msg_key(ctx, c_conn, (char *)key, keylen, ttl);
             break;
 
         case MSG_REQ_RIAK_SDIFF:
@@ -551,7 +552,7 @@ repack_dt_fetch_resp(struct msg* r, DtFetchResp* dtresp)
         case MSG_REQ_RIAK_SUNIONSTORE:
             add_sadd_msg(ctx, c_conn, (uint8_t*)key, keylen, values, values_count, MSG_REQ_HIDDEN);
             // TODO may be it have to be done after perforing command?
-            add_pexpire_msg_key(ctx, c_conn, (char *)key, keylen, pool->server_ttl_ms);
+            add_pexpire_msg_key(ctx, c_conn, (char *)key, keylen, ttl);
             break;
         default:
             break;
@@ -855,12 +856,13 @@ riak_synced_key(struct context *ctx, struct msg* pmsg, struct msg* amsg, uint32_
     // sync frontend
     add_sadd_msg(ctx, c_conn, req.bucket.data, req.bucket.len + req.key.len + 1,
                  values, amsg->narg, MSG_REQ_HIDDEN);
+    int64_t ttl = server_pool_bucket_ttl(pool, req.bucket.data, req.bucket.len);
     if (req.type.len > 0) {
         add_pexpire_msg_key(ctx, c_conn, (char*)req.type.data,
-                        req.type.len + req.bucket.len + req.key.len + 2, pool->server_ttl_ms);
+                        req.type.len + req.bucket.len + req.key.len + 2, ttl);
     } else {
         add_pexpire_msg_key(ctx, c_conn, (char*)req.bucket.data,
-                        req.bucket.len + req.key.len + 1, pool->server_ttl_ms);
+                        req.bucket.len + req.key.len + 1, ttl);
     }
 
     // sync backend

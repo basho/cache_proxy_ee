@@ -991,3 +991,20 @@ server_pool_deinit(struct array *server_pool)
 
     log_debug(LOG_DEBUG, "deinit %"PRIu32" pools", npool);
 }
+
+int64_t
+server_pool_bucket_ttl(struct server_pool *pool, uint8_t *bucket, uint32_t bucketlen)
+{
+    uint32_t i;
+    uint32_t nelem = array_n(&pool->backend_opt.bucket_prop);
+    for (i = 0; i < nelem; i++) {
+            struct bucket_prop *bp = array_get(&pool->backend_opt.bucket_prop, i);
+            if (bucketlen != bp->name.len) {
+                continue;
+            }
+            if (nc_strncmp(bucket, bp->name.data, bucketlen) == 0) {
+                return bp->ttl_ms;
+            }
+    }
+    return pool->server_ttl_ms;
+}
