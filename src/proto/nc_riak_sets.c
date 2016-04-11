@@ -533,8 +533,10 @@ repack_dt_fetch_resp(struct msg* r, DtFetchResp* dtresp)
                                   (uint32_t)req->bucket.len, req->bucket.data,
                                   (uint32_t)req->key.len, req->key.data);
         ASSERT(keylen == sizeof(key) - 1);
+        int64_t ttl = server_pool_bucket_ttl(pool,
+                                             req->type.data, req->type.len,
+                                             req->bucket.data, req->bucket.len);
         dt_fetch_req__free_unpacked(req, NULL);
-        int64_t ttl = server_pool_bucket_ttl(pool, req->bucket.data, req->bucket.len);
 
         switch(pmsg->type) {
         case MSG_REQ_RIAK_SMEMBERS:
@@ -856,7 +858,9 @@ riak_synced_key(struct context *ctx, struct msg* pmsg, struct msg* amsg, uint32_
     // sync frontend
     add_sadd_msg(ctx, c_conn, req.bucket.data, req.bucket.len + req.key.len + 1,
                  values, amsg->narg, MSG_REQ_HIDDEN);
-    int64_t ttl = server_pool_bucket_ttl(pool, req.bucket.data, req.bucket.len);
+    int64_t ttl = server_pool_bucket_ttl(pool,
+                                         req.type.data, req.type.len,
+                                         req.bucket.data, req.bucket.len);
     if (req.type.len > 0) {
         add_pexpire_msg_key(ctx, c_conn, (char*)req.type.data,
                         req.type.len + req.bucket.len + req.key.len + 2, ttl);

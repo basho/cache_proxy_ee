@@ -600,8 +600,12 @@ add_set_msg_key(struct context *ctx, struct conn* c_conn, char* keyname,
     ProtobufCBinaryData datatype;
     ProtobufCBinaryData bucket;
     ProtobufCBinaryData key;
-    nc_split_key_string((uint8_t*)keyname, keynamelen, &datatype, &bucket, &key);
-    int64_t sl_ttl_ms = server_pool_bucket_ttl(pool, bucket.data, (uint32_t)bucket.len);
+    nc_split_key_string((uint8_t*) keyname, keynamelen, &datatype, &bucket, &key);
+    int64_t sl_ttl_ms = server_pool_bucket_ttl(pool,
+                                               datatype.data,
+                                               (uint32_t)datatype.len,
+                                               bucket.data,
+                                               (uint32_t)bucket.len);
 
     if (sl_ttl_ms > 0) {
         use_ttl = true;

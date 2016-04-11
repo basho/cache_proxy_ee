@@ -183,6 +183,7 @@ void server_pool_disconnect(struct context *ctx);
 rstatus_t server_pool_init(struct array *server_pool, struct array *conf_pool, struct context *ctx);
 void server_pool_deinit(struct array *server_pool);
 
-int64_t server_pool_bucket_ttl(struct server_pool *pool, uint8_t *bucket, uint32_t bucketlen);
+int64_t server_pool_bucket_ttl(struct server_pool *pool, uint8_t *datatype, uint32_t datatypelen,
+                               uint8_t *bucket, uint32_t bucketlen);
 
 #endif

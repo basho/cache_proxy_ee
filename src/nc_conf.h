@@ -30,7 +30,8 @@
 #define CONF_ERROR          (void *) "has an invalid value"
 
 #define CONF_ROOT_DEPTH     1
-#define CONF_MAX_DEPTH      CONF_ROOT_DEPTH + 1
+#define CONF_SEQ_DEPTH      (CONF_ROOT_DEPTH + 1)
+#define CONF_MAX_DEPTH      (CONF_SEQ_DEPTH + 1)
 
 #define CONF_DEFAULT_ARGS       3
 #define CONF_DEFAULT_POOL       8
@@ -80,7 +81,8 @@ struct conf_server {
 };
 
 struct bucket_prop {
-    struct string   name;       /* name */
+    struct string   datatype;   /* datatype */
+    struct string   bucket;     /* bucket */
     int64_t         ttl_ms;     /* port */
 };
 
