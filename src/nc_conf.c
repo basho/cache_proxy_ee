@@ -456,7 +456,7 @@ conf_pool_each_transform(void *elem, void *data)
     sp->backend_opt.riak_notfound_ok = cp->backend_riak_notfound_ok;
     sp->backend_opt.riak_deletedvclock = cp->backend_riak_deletedvclock;
     sp->backend_opt.riak_timeout = cp->backend_riak_timeout;
-    sp->backend_opt.bucket_prop.nelem = 0;
+    array_null(&cp->bucket_prop);
     /* move buckets properties */
     uint32_t nbucket_prop = array_n(&cp->bucket_prop);
     if (nbucket_prop > 0) {
