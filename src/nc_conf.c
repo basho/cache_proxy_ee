@@ -1941,8 +1941,8 @@ conf_add_bucket_prop(struct conf *cf, struct command *cmd, void *conf)
     while (*vptr != ':' && vptr < eptr) {
         vptr++;
     }
-    if (vptr >= eptr || vptr == name->data) {
-        return CONF_ERROR ;
+    if ((vptr + 1) >= eptr || vptr == name->data) {
+        return CONF_ERROR;
     }
 
     field = array_push(a);
