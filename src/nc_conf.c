@@ -21,6 +21,7 @@
 #include <proto/nc_proto.h>
 
 char* conf_add_server_(struct conf *cf, struct command *cmd, void *conf, bool backend);
+char *conf_read_ttl_value(struct string *value, int64_t *np);
 
 #define DEFINE_ACTION(_hash, _name) string(#_name),
 static struct string hash_strings[] = {
@@ -133,6 +134,10 @@ static struct command conf_commands[] = {
     { string("backends"),
       conf_add_server_be,
       offsetof(struct conf_pool, server_be) },
+
+    { string("buckets"),
+      conf_add_bucket_prop,
+      offsetof(struct conf_pool, bucket_prop) },
 
     { string("backend_type"),
       conf_set_backend_type,
@@ -317,6 +322,15 @@ conf_pool_init(struct conf_pool *cp, struct string *name)
         return status;
     }
 
+    status = array_init(&cp->bucket_prop, CONF_DEFAULT_BUCKETS,
+                        sizeof(struct bucket_prop));
+    if (status != NC_OK) {
+        string_deinit(&cp->name);
+        array_deinit(&cp->server);
+        array_deinit(&cp->server_be);
+        return status;
+    }
+
     log_debug(LOG_VVERB, "init conf pool %p, '%.*s'", cp, name->len, name->data);
 
     return NC_OK;
@@ -342,8 +356,15 @@ conf_pool_deinit(struct conf_pool *cp)
         conf_server_deinit(array_pop(&cp->server_be));
     }
 
+    while (array_n(&cp->bucket_prop) != 0) {
+        struct bucket_prop *bp = array_pop(&cp->bucket_prop);
+        string_deinit(&bp->bucket);
+        string_deinit(&bp->datatype);
+    }
+
     array_deinit(&cp->server);
     array_deinit(&cp->server_be);
+    array_deinit(&cp->bucket_prop);
 
     log_debug(LOG_VVERB, "deinit conf pool %p", cp);
 }
@@ -436,6 +457,25 @@ conf_pool_each_transform(void *elem, void *data)
     sp->backend_opt.riak_notfound_ok = cp->backend_riak_notfound_ok;
     sp->backend_opt.riak_deletedvclock = cp->backend_riak_deletedvclock;
     sp->backend_opt.riak_timeout = cp->backend_riak_timeout;
+    array_null(&sp->backend_opt.bucket_prop);
+    /* move buckets properties */
+    uint32_t nbucket_prop = array_n(&cp->bucket_prop);
+    if (nbucket_prop > 0) {
+        array_init(&sp->backend_opt.bucket_prop, nbucket_prop, sizeof(struct bucket_prop));
+        uint32_t i, nelem;
+        for (i = 0, nelem = array_n(&cp->bucket_prop); i < nelem; i++) {
+            struct bucket_prop *bp = array_get(&cp->bucket_prop, i);
+            struct bucket_prop *nbp = array_push(&sp->backend_opt.bucket_prop);
+            if (bp->ttl_ms == CONF_UNSET_NUM) {
+                nbp->ttl_ms = cp->server_ttl_ms;
+            } else {
+                nbp->ttl_ms = bp->ttl_ms;
+            }
+            nbp->datatype = bp->datatype;
+            nbp->bucket = bp->bucket;
+        }
+    }
+    ASSERT(array_n(&sp->backend_opt.bucket_prop) == nbucket_prop);
 
     uint32_t nbackend_server = array_n(&cp->server_be);
 
@@ -455,9 +495,10 @@ conf_pool_each_transform(void *elem, void *data)
 static void
 conf_dump(struct conf *cf)
 {
-    uint32_t i, j, npool, nserver, nbackend_server;
+    uint32_t i, j, npool, nserver, nbackend_server, nbucket_prop;
     struct conf_pool *cp;
     struct string *s;
+    struct bucket_prop *bp;
 
     npool = array_n(&cf->pool);
     if (npool == 0) {
@@ -505,6 +546,16 @@ conf_dump(struct conf *cf)
         for (j = 0; j < nbackend_server; j++) {
             s = array_get(&cp->server_be, j);
             log_debug(LOG_VVERB, "    %.*s", s->len, s->data);
+        }
+
+        nbucket_prop = array_n(&cp->bucket_prop);
+        log_debug(LOG_VVERB, "  buckets properties: %"PRIu32"", nbucket_prop);
+        for (j = 0; j < nbucket_prop; j++) {
+            bp = array_get(&cp->bucket_prop, j);
+            log_debug(LOG_VVERB, "    %.*s:%.*s ttl:%"PRIi64" ms",
+                      bp->datatype.len, bp->datatype.data,
+                      bp->bucket.len, bp->bucket.data,
+                      bp->ttl_ms);
         }
     }
 }
@@ -812,8 +863,8 @@ conf_parse_core(struct conf *cf, void *data)
 
         /* take appropriate action */
         if (cf->seq) {
-            /* for a sequence, leaf is at CONF_MAX_DEPTH */
-            ASSERT(cf->depth == CONF_MAX_DEPTH);
+            /* for a sequence, leaf is at CONF_MAX_DEPTH or CONF_SEQ_DEPTH */
+            ASSERT(cf->depth == CONF_MAX_DEPTH || cf->depth == CONF_SEQ_DEPTH);
             leaf = true;
         } else if (cf->depth == CONF_ROOT_DEPTH) {
             /* create new conf_pool */
@@ -824,8 +875,8 @@ conf_parse_core(struct conf *cf, void *data)
            }
            new_pool = true;
         } else if (array_n(&cf->arg) == cf->depth + 1) {
-            /* for {key: value}, leaf is at CONF_MAX_DEPTH */
-            ASSERT(cf->depth == CONF_MAX_DEPTH);
+            /* for {key: value}, leaf is at CONF_MAX_DEPTH or CONF_SEQ_DEPTH */
+            ASSERT(cf->depth == CONF_MAX_DEPTH || cf->depth == CONF_SEQ_DEPTH);
             leaf = true;
         }
         break;
@@ -1151,6 +1202,8 @@ conf_validate_structure(struct conf *cf)
      *   key2: value2
      *   seq:
      *     - elem1
+     *       subkey1: value1
+     *       subkey2: value1
      *     - elem2
      *     - elem3
      *   key3: value3
@@ -1191,7 +1244,7 @@ conf_validate_structure(struct conf *cf)
             break;
 
         case YAML_MAPPING_END_EVENT:
-            if (depth == CONF_MAX_DEPTH) {
+            if (depth == CONF_SEQ_DEPTH) {
                 if (seq) {
                     seq = false;
                 } else {
@@ -1205,11 +1258,11 @@ conf_validate_structure(struct conf *cf)
             break;
 
         case YAML_SEQUENCE_START_EVENT:
-            if (seq > 1) {
+            if (seq > 2) {
                 error = true;
-                log_error("conf: '%s' has more than two sequence directives",
+                log_error("conf: '%s' has more than three sequence directives",
                           cf->fname);
-            } else if (depth != CONF_MAX_DEPTH) {
+            } else if (depth != CONF_MAX_DEPTH && depth != CONF_SEQ_DEPTH) {
                 error = true;
                 log_error("conf: '%s' has sequence at depth %d instead of %d",
                           cf->fname, depth, CONF_MAX_DEPTH);
@@ -1222,7 +1275,7 @@ conf_validate_structure(struct conf *cf)
             break;
 
         case YAML_SEQUENCE_END_EVENT:
-            ASSERT(depth == CONF_MAX_DEPTH);
+            ASSERT(depth == CONF_MAX_DEPTH || depth == CONF_SEQ_DEPTH);
             count[depth] = 0;
             break;
 
@@ -1235,7 +1288,7 @@ conf_validate_structure(struct conf *cf)
                 error = true;
                 log_error("conf: '%s' has invalid mapping \"key:\" at depth %d",
                           cf->fname, depth);
-            } else if (depth == CONF_MAX_DEPTH && count[depth] == 2) {
+            } else if ((depth == CONF_MAX_DEPTH || depth == CONF_SEQ_DEPTH) && count[depth] == 2) {
                 /* found a "key: value", resetting! */
                 count[depth] = 0;
             }
@@ -1828,23 +1881,9 @@ conf_add_server_be(struct conf *cf, struct command *cmd, void *conf)
     return conf_add_server_(cf, cmd, conf, true);
 }
 
-char* 
-conf_set_server_ttl(struct conf *cf, struct command *cmd, void *conf)
+char *
+conf_read_ttl_value(struct string *value, int64_t *np)
 {
-    uint8_t *p;
-    int64_t *np;
-
-    struct string *value;
-
-    p = conf;
-    np = (int64_t *)(p + cmd->offset);
-
-    if (*np != CONF_UNSET_NUM) {
-        return "is a duplicate";
-    }
-
-    value = array_top(&cf->arg);
-
     char* val = (char*)value->data;
     char* ptr = 0;
 
@@ -1863,7 +1902,7 @@ conf_set_server_ttl(struct conf *cf, struct command *cmd, void *conf)
         ptr++;
     }
     unitstr[unit_len] = '\0';
-    
+
     struct unit* unitptr=0;
     for (unitptr = units; strlen(unitptr->name) != 0; unitptr++) {
         if (strlen(unitptr->name) == strlen(unitstr)) {
@@ -1875,6 +1914,110 @@ conf_set_server_ttl(struct conf *cf, struct command *cmd, void *conf)
     }
 
     return (void*)"has invalid units";
+}
+
+char *
+conf_add_bucket_prop(struct conf *cf, struct command *cmd, void *conf)
+{
+    typedef enum {
+        BPR_NONE,
+        BPR_TTL
+    } BP_READSTATE;
+
+    const struct string ttl_str = string("ttl");
+    char *status;
+    struct array *a;
+    struct string value;
+    struct bucket_prop *field;
+    struct string *name;
+
+    a = (struct array *)((uint8_t *)conf + cmd->offset);
+    name = array_top(&cf->arg);
+    if (name->len == 0) {
+        return CONF_ERROR;
+    }
+    uint8_t *vptr = name->data;
+    uint8_t *eptr = name->data + name->len;
+    while (*vptr != ':' && vptr < eptr) {
+        vptr++;
+    }
+    if ((vptr + 1) >= eptr || vptr == name->data) {
+        return CONF_ERROR;
+    }
+
+    field = array_push(a);
+    if (field == NULL) {
+        return CONF_ERROR;
+    }
+    field->datatype.len = (uint32_t)(vptr - name->data);
+    field->datatype.data = nc_strndup(name->data, field->datatype.len);
+    field->bucket.len = name->len - (uint32_t)(vptr - name->data + 1);
+    field->bucket.data = nc_strndup(vptr + 1, field->bucket.len);
+    // Init default values for fields
+    field->ttl_ms = CONF_UNSET_NUM;
+
+    bool done = false;
+    bool error = false;
+    BP_READSTATE state = BPR_NONE;
+    do {
+        conf_event_done(cf);
+        conf_event_next(cf);
+        switch (cf->event.type) {
+        case YAML_MAPPING_END_EVENT:
+            cf->depth--;
+            conf_event_done(cf);
+            done = true;
+            break;
+        case YAML_SCALAR_EVENT:
+            value.data = cf->event.data.scalar.value;
+            value.len = (uint32_t)cf->event.data.scalar.length;
+            switch (state) {
+            case BPR_NONE:
+                if (string_compare(&value, &ttl_str) == 0) {
+                    state = BPR_TTL;
+                } else if (value.len) {
+                    error = true;
+                }
+                break;
+            case BPR_TTL:
+                status = conf_read_ttl_value(&value, &field->ttl_ms);
+                if (status != CONF_OK) {
+                    error = true;
+                }
+                state = BPR_NONE;
+                break;
+            }
+            break;
+        default:
+            break;
+        }
+    } while (!done && !error);
+
+    if (error) {
+        array_pop(a);
+        return CONF_ERROR;
+    }
+    return CONF_OK;
+}
+
+char*
+conf_set_server_ttl(struct conf *cf, struct command *cmd, void *conf)
+{
+    uint8_t *p;
+    int64_t *np;
+
+    struct string *value;
+
+    p = conf;
+    np = (int64_t *)(p + cmd->offset);
+
+    if (*np != CONF_UNSET_NUM) {
+        return "is a duplicate";
+    }
+
+    value = array_top(&cf->arg);
+
+    return conf_read_ttl_value(value, np);
 }
 
 char *

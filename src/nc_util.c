@@ -670,3 +670,47 @@ ndig(uint32_t val)
     }
     return 1;
 }
+
+void
+nc_split_key_string(uint8_t *keystring, size_t keystringlen,
+                    ProtobufCBinaryData *datatype,
+                    ProtobufCBinaryData *bucket,
+                    ProtobufCBinaryData *key)
+{
+    datatype->data = keystring;
+    datatype->len = keystringlen;
+    bucket->data = NULL;
+    bucket->len = 0;
+    key->data = NULL;
+    key->len = 0;
+    uint8_t *pc = keystring;
+    uint8_t *ppc = pc;
+    uint8_t first_sep = 0;
+    while (*pc) {
+        if (*pc == ':') {
+            if (first_sep == 0) {
+                datatype->len = (size_t)(pc - ppc);
+                ppc = pc + 1;
+                bucket->len = keystringlen - datatype->len - 1;
+                bucket->data = bucket->len ? (pc + 1) : NULL;
+                first_sep = 1;
+            } else {
+                bucket->len = (size_t)(pc - ppc);
+                key->data = pc + 1;
+                if (*key->data) {
+                    key->len = keystringlen - datatype->len - bucket->len - 2;
+                }
+                break;
+            }
+        }
+        pc++;
+    }
+
+    while (key->len == 0 && bucket->len + datatype->len) {
+        key->data = bucket->data;
+        key->len = bucket->len;
+        bucket->data = datatype->data;
+        bucket->len = datatype->len;
+        datatype->len = 0;
+    }
+}

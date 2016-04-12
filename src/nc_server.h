@@ -110,6 +110,7 @@ struct backend_opt {
     int                riak_notfound_ok;     /* Riak notfound_ok */
     int                riak_deletedvclock;   /* Riak deletedvclock */
     int                riak_timeout;         /* Riak timeout */
+    struct array       bucket_prop;          /* buckets properties */
 };
 
 struct server_pool {
@@ -181,5 +182,8 @@ rstatus_t server_pool_preconnect(struct context *ctx);
 void server_pool_disconnect(struct context *ctx);
 rstatus_t server_pool_init(struct array *server_pool, struct array *conf_pool, struct context *ctx);
 void server_pool_deinit(struct array *server_pool);
+
+int64_t server_pool_bucket_ttl(struct server_pool *pool, uint8_t *datatype, uint32_t datatypelen,
+                               uint8_t *bucket, uint32_t bucketlen);
 
 #endif

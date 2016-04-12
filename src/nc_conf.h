@@ -30,11 +30,13 @@
 #define CONF_ERROR          (void *) "has an invalid value"
 
 #define CONF_ROOT_DEPTH     1
-#define CONF_MAX_DEPTH      CONF_ROOT_DEPTH + 1
+#define CONF_SEQ_DEPTH      (CONF_ROOT_DEPTH + 1)
+#define CONF_MAX_DEPTH      (CONF_SEQ_DEPTH + 1)
 
 #define CONF_DEFAULT_ARGS       3
 #define CONF_DEFAULT_POOL       8
 #define CONF_DEFAULT_SERVERS    8
+#define CONF_DEFAULT_BUCKETS    8
 
 #define CONF_UNSET_NUM  -1
 #define CONF_UNSET_PTR  NULL
@@ -78,6 +80,12 @@ struct conf_server {
     unsigned        backend:1;  /* backend? */
 };
 
+struct bucket_prop {
+    struct string   datatype;   /* datatype */
+    struct string   bucket;     /* bucket */
+    int64_t         ttl_ms;     /* port */
+};
+
 struct conf_pool {
     struct string      name;                  /* pool name (root node) */
     struct conf_listen listen;                /* listen: */
@@ -97,6 +105,7 @@ struct conf_pool {
     int                server_failure_limit;  /* server_failure_limit: */
     struct array       server;                /* servers: conf_server[] */
     struct array       server_be;             /* backend servers: conf_server[] */
+    struct array       bucket_prop;           /* buckets properties: bucket_prop[] */
     connection_type_t  backend_type;          /* The backend type */
     int                backend_max_resend;    /* Maximum number of backend servers we will query */
     int                backend_riak_r;        /* Riak r val */
@@ -143,6 +152,7 @@ char *conf_set_string(struct conf *cf, struct command *cmd, void *conf);
 char *conf_set_listen(struct conf *cf, struct command *cmd, void *conf);
 char *conf_add_server(struct conf *cf, struct command *cmd, void *conf);
 char *conf_add_server_be(struct conf *cf, struct command *cmd, void *conf);
+char *conf_add_bucket_prop(struct conf *cf, struct command *cmd, void *conf);
 char *conf_set_num(struct conf *cf, struct command *cmd, void *conf);
 char *conf_set_bool(struct conf *cf, struct command *cmd, void *conf);
 char *conf_set_hash(struct conf *cf, struct command *cmd, void *conf);

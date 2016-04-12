@@ -19,6 +19,7 @@
 #define _NC_UTIL_H_
 
 #include <stdarg.h>
+#include <protobuf-c/protobuf-c.h>
 
 #define LF                  (uint8_t) 10
 #define CR                  (uint8_t) 13
@@ -229,5 +230,9 @@ char *nc_unresolve_addr(struct sockaddr *addr, socklen_t addrlen);
 char *nc_unresolve_peer_desc(int sd);
 char *nc_unresolve_desc(int sd);
 uint32_t ndig(uint32_t val);
+void nc_split_key_string(uint8_t *keystring, size_t keystringlen,
+                         ProtobufCBinaryData *datatype,
+                         ProtobufCBinaryData *bucket,
+                         ProtobufCBinaryData *key);
 
 #endif
