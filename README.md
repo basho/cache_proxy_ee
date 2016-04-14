@@ -184,11 +184,7 @@ If you are deploying BDP Cache Proxy in production, you might consider reading t
 
 ## Packages
 
-### Centos
-#TODO: create Centos (RH, rpm) package
-
-### Ubuntu
-#TODO: create Ubuntu (Debian, deb) package
+OS packages are created outside of this repo.
 
 ## Issues and Support
 
