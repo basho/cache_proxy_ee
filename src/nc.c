@@ -27,6 +27,7 @@
 #include <nc_core.h>
 #include <nc_conf.h>
 #include <nc_signal.h>
+#include <nc_admin.h>
 
 #define NC_CONF_PATH        "conf/nutcracker.yml"
 
@@ -205,6 +206,7 @@ nc_show_usage(void)
         "Usage: nutcracker [-?hVdDt] [-v verbosity level] [-o output file]" CRLF
         "                  [-c conf file] [-s stats port] [-a stats addr]" CRLF
         "                  [-i stats interval] [-p pid file] [-m mbuf size]" CRLF
+        "       nutcracker admin riak_host:riak_port command args" CRLF
         "");
     log_stderr(
         "Options:" CRLF
@@ -539,6 +541,19 @@ nc_run(struct instance *nci)
 int
 main(int argc, char **argv)
 {
+    if (argc > 1) {
+        if (strcmp(argv[1], "admin") == 0) {
+            if (argc > 3) {
+                char *arg1 = argc > 4 ? argv[4] : NULL;
+                char *arg2 = argc > 5 ? argv[5] : NULL;
+                char *arg3 = argc > 6 ? argv[6] : NULL;
+                return nc_admin_command(argv[2], argv[3], arg1, arg2, arg3);
+            } else {
+                nc_show_usage();
+                exit(1);
+            }
+        }
+    }
     rstatus_t status;
     struct instance nci;
 
