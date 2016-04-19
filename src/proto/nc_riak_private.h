@@ -1,8 +1,8 @@
 #ifndef _NC_RIAK_H_
 #define _NC_RIAK_H_
 
-#include <riak_kv.pb-c.h>
-#include <riak_dt.pb-c.h>
+#include <proto/riak_kv.pb-c.h>
+#include <proto/riak_dt.pb-c.h>
 
 #define CONF_UNSET_NUM -1
 

@@ -27,7 +27,7 @@
 #include <nc_core.h>
 #include <nc_conf.h>
 #include <nc_signal.h>
-#include <nc_admin.h>
+#include <admin/nc_admin.h>
 
 #define NC_CONF_PATH        "conf/nutcracker.yml"
 
