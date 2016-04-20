@@ -35,14 +35,11 @@ const uint8_t RRA_SET_DATATYPE[] = "rra_set";
 const size_t RRA_SET_DATATYPE_LEN = sizeof(RRA_SET_DATATYPE) - 1;
 const uint8_t RRA_COUNTER_DATATYPE[] = "rra_counter";
 const size_t RRA_COUNTER_DATATYPE_LEN = sizeof(RRA_COUNTER_DATATYPE) - 1;
-const uint8_t RRA_SET_BUCKET[] = "rra_config";
-const size_t RRA_SET_BUCKET_LEN = sizeof(RRA_DATATYPE) - 1;
-const uint8_t RRA_SET_KEY[] = "rra_buckets";
-const size_t RRA_SET_KEY_LEN = sizeof(RRA_DATATYPE) - 1;
-const uint8_t RRA_COUNTER_BUCKET[] = "rra_config";
-const size_t RRA_COUNTER_BUCKET_LEN = sizeof(RRA_COUNTER_BUCKET) - 1;
-const uint8_t RRA_COUNTER_KEY[] = "rra_revision";
-const  size_t RRA_COUNTER_KEY_LEN = sizeof(RRA_COUNTER_KEY) - 1;
+const uint8_t RRA_SERVICE_BUCKET[] = "rra_config";
+const size_t RRA_SERVICE_BUCKET_LEN = sizeof(RRA_DATATYPE) - 1;
+const uint8_t RRA_SERVICE_KEY[] = "rra_buckets";
+const size_t RRA_SERVICE_KEY_LEN = sizeof(RRA_DATATYPE) - 1;
+
 const char *ALLOWED_PROPERTIES[] = {
     "ttl",
     /* should be finished with empty line */

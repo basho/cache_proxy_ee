@@ -12,6 +12,8 @@ typedef enum {
     REQ_RIAK_DEL = 13,
     REQ_RIAK_LIST_BUCKETS = 15,
     REQ_RIAK_LIST_KEYS = 17,
+    REQ_RIAK_COUNTER_UPDATE = 50,
+    REQ_RIAK_COUNTER_GET = 52,
     REQ_RIAK_DT_FETCH = 80,
     REQ_RIAK_DT_UPDATE = 82
 } riak_req_t;
@@ -23,6 +25,8 @@ typedef enum {
     RSP_RIAK_DEL = 14,
     RSP_RIAK_LIST_BUCKETS = 16,
     RSP_RIAK_LIST_KEYS = 18,
+    RSP_RIAK_COUNTER_UPDATE = 51,
+    RSP_RIAK_COUNTER_GET = 53,
     RSP_RIAK_DT_FETCH = 81,
     RSP_RIAK_DT_UPDATE = 83
 } riak_rsp_t;

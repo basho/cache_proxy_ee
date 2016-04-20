@@ -99,6 +99,14 @@ pack_buffer(riak_req_t type, const void *req, uint32_t *pack_size)
         *pack_size = (uint32_t)dt_update_req__get_packed_size((DtUpdateReq *)req);
         func = (pack_func)dt_update_req__pack;
         break;
+    case REQ_RIAK_COUNTER_GET:
+        *pack_size = (uint32_t)rpb_counter_get_req__get_packed_size((RpbCounterGetReq *)req);
+        func = (pack_func)rpb_counter_get_req__pack;
+        break;
+    case REQ_RIAK_COUNTER_UPDATE:
+        *pack_size = (uint32_t)rpb_counter_update_req__get_packed_size((RpbCounterUpdateReq *)req);
+        func = (pack_func)rpb_counter_update_req__pack;
+        break;
     default:
         log_debug(LOG_ERR, "Unknown riak request");
         return NULL;
@@ -240,11 +248,11 @@ nc_admin_connection_set_bucket_prop(int sock, const char *bucket,
     setvalue.len = nc_strlen(bucket);
     ureq.type.data = (uint8_t *)RRA_SET_DATATYPE;
     ureq.type.len = RRA_SET_DATATYPE_LEN;
-    ureq.bucket.data = (uint8_t *)RRA_SET_BUCKET;
-    ureq.bucket.len = RRA_SET_BUCKET_LEN;
+    ureq.bucket.data = (uint8_t *)RRA_SERVICE_BUCKET;
+    ureq.bucket.len = RRA_SERVICE_BUCKET_LEN;
     ureq.has_key = 1;
-    ureq.key.data = (uint8_t *)RRA_SET_KEY;
-    ureq.key.len = RRA_SET_KEY_LEN;
+    ureq.key.data = (uint8_t *)RRA_SERVICE_KEY;
+    ureq.key.len = RRA_SERVICE_KEY_LEN;
     uint8_t *ursp = riak_send(sock, REQ_RIAK_DT_UPDATE, &ureq, &len);
     if (ursp == NULL) {
         return false;
@@ -264,13 +272,13 @@ nc_admin_connection_set_bucket_prop(int sock, const char *bucket,
     cop.counter_op = &counterop;
     counterop.has_increment = 1;
     counterop.increment = 1;
-    creq.type.data = (uint8_t *)RRA_COUNTER_DATATYPE;
+    creq.type.data = (uint8_t *) RRA_COUNTER_DATATYPE;
     creq.type.len = RRA_COUNTER_DATATYPE_LEN;
-    creq.bucket.data = (uint8_t *)RRA_COUNTER_BUCKET;
-    creq.bucket.len = RRA_COUNTER_BUCKET_LEN;
+    creq.bucket.data = (uint8_t *) RRA_SERVICE_BUCKET;
+    creq.bucket.len = RRA_SERVICE_BUCKET_LEN;
     creq.has_key = 1;
-    creq.key.data = (uint8_t *)RRA_COUNTER_KEY;
-    creq.key.len = RRA_COUNTER_KEY_LEN;
+    creq.key.data = (uint8_t *) RRA_SERVICE_KEY;
+    creq.key.len = RRA_SERVICE_KEY_LEN;
     uint8_t *crsp = riak_send(sock, REQ_RIAK_DT_UPDATE, &creq, &len);
     if (crsp == NULL) {
         return false;
@@ -280,7 +288,6 @@ nc_admin_connection_set_bucket_prop(int sock, const char *bucket,
     if (id != RSP_RIAK_DT_UPDATE) {
         return false;
     }
-
     return true;
 }
 
@@ -297,10 +304,10 @@ nc_admin_connection_list_buckets(int sock)
     DtFetchReq req = DT_FETCH_REQ__INIT;
     req.type.data = (uint8_t *)RRA_SET_DATATYPE;
     req.type.len = RRA_SET_DATATYPE_LEN;
-    req.bucket.data = (uint8_t*)RRA_SET_BUCKET;
-    req.bucket.len = RRA_SET_BUCKET_LEN;
-    req.key.data = (uint8_t*)RRA_SET_KEY;
-    req.key.len = RRA_SET_KEY_LEN;
+    req.bucket.data = (uint8_t*)RRA_SERVICE_BUCKET;
+    req.bucket.len = RRA_SERVICE_BUCKET_LEN;
+    req.key.data = (uint8_t*)RRA_SERVICE_KEY;
+    req.key.len = RRA_SERVICE_KEY_LEN;
     uint32_t len;
     uint8_t *rsp = riak_send(sock, REQ_RIAK_DT_FETCH, &req, &len);
     if (rsp == NULL) {
@@ -309,5 +316,34 @@ nc_admin_connection_list_buckets(int sock)
     DtFetchResp *rpbresp = dt_fetch_resp__unpack(NULL, len - 1, rsp + 1);
     nc_free(rsp);
     return rpbresp;
+}
+
+int64_t
+nc_admin_connection_get_counter(int sock)
+{
+    DtFetchReq req = DT_FETCH_REQ__INIT;
+    req.type.data = (uint8_t *) RRA_COUNTER_DATATYPE;
+    req.type.len = RRA_COUNTER_DATATYPE_LEN;
+    req.bucket.data = (uint8_t *)RRA_SERVICE_BUCKET;
+    req.bucket.len = RRA_SERVICE_BUCKET_LEN;
+    req.key.data = (uint8_t *)RRA_SERVICE_KEY;
+    req.key.len = RRA_SERVICE_KEY_LEN;
+    uint32_t len;
+    uint8_t *rsp = riak_send(sock, REQ_RIAK_DT_FETCH, &req, &len);
+    if (rsp == NULL || len == 0) {
+        return 0;
+    }
+    if (rsp[0] != RSP_RIAK_DT_FETCH) {
+        return 0;
+    }
+    DtFetchResp *rpbresp = dt_fetch_resp__unpack(NULL, len - 1, rsp + 1);
+    nc_free(rsp);
+    if (rpbresp == NULL) {
+        return 0;
+    }
+    int64_t res = rpbresp->value->has_counter_value ?
+                      rpbresp->value->counter_value : 0;
+    nc_free(rpbresp);
+    return res;
 }
 
