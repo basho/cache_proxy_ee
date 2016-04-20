@@ -14,8 +14,8 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#include <admin/nc_admin.h>
-#include <admin/nc_admin_connection.h>
+#include <nc_admin.h>
+#include <nc_admin_connection.h>
 #include <nc_core.h>
 #include <nc_string.h>
 
@@ -63,7 +63,7 @@ static int
 nc_admin_set_bucket_prop(const char *host, const char *bucket,
                          const char *prop, const char *value)
 {
-    int sock = nc_admin_connection_connect(host);
+    int sock = nc_admin_connection_resolve_connect(host);
     if (sock == INVALID_SOCKET) {
         nc_admin_print("Error while connecting to riak");
         return NC_ADMIN_ERROR;
@@ -83,7 +83,7 @@ nc_admin_get_bucket_prop(const char *host, const char *bucket,
                          const char *prop)
 {
     uint32_t i;
-    int sock = nc_admin_connection_connect(host);
+    int sock = nc_admin_connection_resolve_connect(host);
     if (sock == INVALID_SOCKET) {
         nc_admin_print("Error while connecting to riak");
         return NC_ADMIN_ERROR;
@@ -121,7 +121,7 @@ static int
 nc_admin_list_buckets(const char *host)
 {
     uint32_t i;
-    int sock = nc_admin_connection_connect(host);
+    int sock = nc_admin_connection_resolve_connect(host);
     if (sock == INVALID_SOCKET) {
         nc_admin_print("Error while connecting to riak");
         return NC_ADMIN_ERROR;

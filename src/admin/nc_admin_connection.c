@@ -28,13 +28,13 @@
 #include <proto/riak.pb-c.h>
 #include <proto/riak_kv.pb-c.h>
 #include <proto/riak_dt.pb-c.h>
-#include <admin/nc_admin_connection.h>
-#include <admin/nc_admin.h>
+#include <nc_admin_connection.h>
+#include <nc_admin.h>
 
 typedef size_t (*pack_func)(const void *message,uint8_t *out);
 
 int
-nc_admin_connection_connect(const char *host)
+nc_admin_connection_resolve_connect(const char *host)
 {
     const size_t hostlen = nc_strlen(host);
     char hostname[hostlen + 1];
@@ -54,19 +54,25 @@ nc_admin_connection_connect(const char *host)
         log_debug(LOG_ERR, "Wrong riak host");
         return 1;
     }
+    int sock = nc_admin_connection_connect(servinfo->ai_addr,
+                                           servinfo->ai_addrlen);
+    freeaddrinfo(servinfo);
+    return sock;
+}
+
+int
+nc_admin_connection_connect(const struct sockaddr *addr, socklen_t len)
+{
     int sock = socket(AF_INET , SOCK_STREAM , 0);
     if (sock == INVALID_SOCKET) {
-        freeaddrinfo(servinfo);
         log_debug(LOG_ERR, "Failed to create socket");
         return INVALID_SOCKET;
     }
-    if (connect(sock, servinfo->ai_addr, servinfo->ai_addrlen) < 0) {
+    if (connect(sock, addr, len) < 0) {
         close(sock);
-        freeaddrinfo(servinfo);
         log_debug(LOG_ERR, "Failed to connect");
         return INVALID_SOCKET;
     }
-    freeaddrinfo(servinfo);
     return sock;
 }
 
@@ -318,8 +324,8 @@ nc_admin_connection_list_buckets(int sock)
     return rpbresp;
 }
 
-int64_t
-nc_admin_connection_get_counter(int sock)
+bool
+nc_admin_connection_get_counter(int sock, int64_t *val)
 {
     DtFetchReq req = DT_FETCH_REQ__INIT;
     req.type.data = (uint8_t *) RRA_COUNTER_DATATYPE;
@@ -331,19 +337,18 @@ nc_admin_connection_get_counter(int sock)
     uint32_t len;
     uint8_t *rsp = riak_send(sock, REQ_RIAK_DT_FETCH, &req, &len);
     if (rsp == NULL || len == 0) {
-        return 0;
+        return false;
     }
     if (rsp[0] != RSP_RIAK_DT_FETCH) {
-        return 0;
+        return false;
     }
     DtFetchResp *rpbresp = dt_fetch_resp__unpack(NULL, len - 1, rsp + 1);
     nc_free(rsp);
     if (rpbresp == NULL) {
-        return 0;
+        return false;
     }
-    int64_t res = rpbresp->value->has_counter_value ?
+    *val = rpbresp->value->has_counter_value ?
                       rpbresp->value->counter_value : 0;
     nc_free(rpbresp);
-    return res;
+    return true;
 }
-

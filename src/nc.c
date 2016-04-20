@@ -28,6 +28,7 @@
 #include <nc_conf.h>
 #include <nc_signal.h>
 #include <admin/nc_admin.h>
+#include <admin/nc_admin_poll.h>
 
 #define NC_CONF_PATH        "conf/nutcracker.yml"
 
@@ -527,6 +528,9 @@ nc_run(struct instance *nci)
         return;
     }
 
+    /* run poll service */
+    nc_admin_poll_start(ctx);
+
     /* run rabbit run */
     for (;;) {
         status = core_loop(ctx);
@@ -536,6 +540,7 @@ nc_run(struct instance *nci)
     }
 
     core_stop(ctx);
+    nc_admin_poll_stop();
 }
 
 int

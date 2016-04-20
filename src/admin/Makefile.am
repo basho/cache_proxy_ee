@@ -11,4 +11,5 @@ noinst_HEADERS = nc_admin.h
 
 libadmin_a_SOURCES =	\
 	nc_admin.c	\
-	nc_admin_connection.c
+	nc_admin_connection.c \
+	nc_admin_poll.c
