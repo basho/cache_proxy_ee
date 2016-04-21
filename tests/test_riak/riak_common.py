@@ -118,7 +118,24 @@ def shutdown_riak_nodes(num):
     node_names = riak_cluster.node_names()
     assert(num <= len(node_names))
     if num > 0:
-        riak_cluster.shutdown(node_names[-num:])
+       # HACK riak cluster shouldn't be deployed on a single physical machine
+       # playing with stop/start nodes in such cases may cause riak cluster
+       # irresponsible for some cases. Cycle below checks if cluster
+       # responsible and if it's not, restarts it few times.
+       for a in range(0, 5):
+            riak_cluster.shutdown(node_names[-num:])
+            nutcracker = redis.Redis(nc.host(), nc.port())
+            ok = True
+            for i in range(0, 100):
+                key = nutcracker_key(i)
+                write_func = lambda: nutcracker.set(key, 'data')
+                res = retry_write(write_func)
+                if res.__class__.__name__ != 'ConnectionError':
+                    riak_cluster.restore()
+                    ok = False
+                    break
+            if ok:
+                break
 
 def restore_riak_nodes():
     riak_cluster.restore()
