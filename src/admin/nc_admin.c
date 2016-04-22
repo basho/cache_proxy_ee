@@ -18,6 +18,7 @@
 #include <nc_admin_connection.h>
 #include <nc_core.h>
 #include <nc_string.h>
+#include <nc_conf.h>
 
 /*
  * To enable datatypes which is require for this admin util, run:
@@ -36,9 +37,9 @@ const size_t RRA_SET_DATATYPE_LEN = sizeof(RRA_SET_DATATYPE) - 1;
 const uint8_t RRA_COUNTER_DATATYPE[] = "rra_counter";
 const size_t RRA_COUNTER_DATATYPE_LEN = sizeof(RRA_COUNTER_DATATYPE) - 1;
 const uint8_t RRA_SERVICE_BUCKET[] = "rra_config";
-const size_t RRA_SERVICE_BUCKET_LEN = sizeof(RRA_DATATYPE) - 1;
+const size_t RRA_SERVICE_BUCKET_LEN = sizeof(RRA_SERVICE_BUCKET) - 1;
 const uint8_t RRA_SERVICE_KEY[] = "rra_buckets";
-const size_t RRA_SERVICE_KEY_LEN = sizeof(RRA_DATATYPE) - 1;
+const size_t RRA_SERVICE_KEY_LEN = sizeof(RRA_SERVICE_KEY) - 1;
 
 const char *ALLOWED_PROPERTIES[] = {
     "ttl",
@@ -68,6 +69,7 @@ nc_admin_set_bucket_prop(const char *host, const char *bucket,
         nc_admin_print("Error while connecting to riak");
         return NC_ADMIN_ERROR;
     }
+
     bool res = nc_admin_connection_set_bucket_prop(sock, bucket, prop, value);
     nc_admin_connection_disconnect(sock);
     if (res) {
@@ -103,6 +105,24 @@ nc_admin_get_bucket_prop(const char *host, const char *bucket,
         nc_free(rpbresp);
         return NC_ADMIN_OK;
     }
+    return NC_ADMIN_ERROR;
+}
+
+static int
+nc_admin_del_bucket(const char *host, const char *bucket)
+{
+    int sock = nc_admin_connection_resolve_connect(host);
+    if (sock == INVALID_SOCKET) {
+        nc_admin_print("Error while connecting to riak");
+        return NC_ADMIN_ERROR;
+    }
+    bool res = nc_admin_connection_del_bucket(sock, bucket);
+    nc_admin_connection_disconnect(sock);
+    if (res) {
+        nc_admin_print("OK");
+        return NC_ADMIN_OK;
+    }
+    nc_admin_print("ERROR");
     return NC_ADMIN_ERROR;
 }
 
@@ -147,7 +167,8 @@ nc_admin_list_buckets(const char *host)
 
 static int
 nc_admin_check_args(int need, const char *arg1, const char *arg2,
-                    const char *arg3, const char *prop)
+                    const char *arg3, const char *bucket, const char *prop,
+                    const char *value)
 {
     if (arg1 == NULL && need > 0) {
         nc_admin_print("Bucket name require");
@@ -166,12 +187,36 @@ nc_admin_check_args(int need, const char *arg1, const char *arg2,
         return NC_ADMIN_ERROR;
     }
 
+    if (bucket) {
+        const char *ptr = bucket;
+        while (*ptr) {
+            if (*ptr == ':') {
+                break;
+            }
+            ptr++;
+        }
+        if (*ptr == 0) {
+            nc_admin_print("Bucket datatype require, specify it like 'datatype:bucket'");
+            return NC_ADMIN_ERROR;
+        }
+    }
     if (prop == NULL) {
         return NC_ADMIN_OK;
     }
     uint32_t i = 0;
     while (ALLOWED_PROPERTIES[i][0]) {
         if (nc_strcmp(prop, ALLOWED_PROPERTIES[i]) == 0) {
+            /* validate prop values */
+            if (value) {
+                int64_t ttl;
+                if (nc_strcmp(prop, "ttl") == 0) {
+                    struct string str = {nc_strlen(value), (uint8_t *)value};
+                    if (conf_read_ttl_value(&str, &ttl) != CONF_OK) {
+                        nc_admin_print("Wrong ttl value");
+                        return NC_ADMIN_ERROR;
+                    }
+                }
+            }
             return NC_ADMIN_OK;
         }
         i++;
@@ -180,39 +225,53 @@ nc_admin_check_args(int need, const char *arg1, const char *arg2,
     return NC_ADMIN_ERROR;
 }
 
+void
+nc_admin_show_usage(void)
+{
+    nc_admin_print(
+        "Usage: nutcracker admin riak_host:port command args" CRLF
+        "Available commands and their arguments are:" CRLF
+        "    set-bucket-prop bucket property value - set bucket property" CRLF
+        "    get-bucket-prop bucket property - get property value" CRLF
+        "    del-bucket bucket - delete bucket" CRLF
+        "    list-buckets - list existing buckets with properties" CRLF
+        "    list-bucket-props - list allowed properties for buckets" CRLF
+        "");
+}
+
 int
 nc_admin_command(const char *host, const char *command,
                  const char *arg1, const char *arg2,
                  const char *arg3)
 {
     if (nc_strcmp(command, "set-bucket-prop") == 0) {
-        if(nc_admin_check_args(3, arg1, arg2, arg3, arg2)) {
+        if(nc_admin_check_args(3, arg1, arg2, arg3, arg1, arg2, arg3)) {
             return NC_ADMIN_ERROR;
         }
         return nc_admin_set_bucket_prop(host, arg1, arg2, arg3);
     } else if (nc_strcmp(command, "get-bucket-prop") == 0) {
-        if(nc_admin_check_args(2, arg1, arg2, arg3, NULL)) {
+        if(nc_admin_check_args(2, arg1, arg2, arg3, arg1, arg2, NULL)) {
             return NC_ADMIN_ERROR;
         }
         return nc_admin_get_bucket_prop(host, arg1, arg2);
+    } else if (nc_strcmp(command, "del-bucket") == 0) {
+        if(nc_admin_check_args(1, arg1, arg2, arg3, arg1, NULL, NULL)) {
+            return NC_ADMIN_ERROR;
+        }
+        return nc_admin_del_bucket(host, arg1);
     } else if (nc_strcmp(command, "list-bucket-props") == 0) {
-        if(nc_admin_check_args(0, arg1, arg2, arg3, NULL)) {
+        if(nc_admin_check_args(0, arg1, arg2, arg3, NULL, NULL, NULL)) {
             return NC_ADMIN_ERROR;
         }
         return nc_admin_list_bucket_props(host);
     } else if (nc_strcmp(command, "list-buckets") == 0) {
-        if(nc_admin_check_args(0, arg1, arg2, arg3, NULL)) {
+        if(nc_admin_check_args(0, arg1, arg2, arg3, NULL, NULL, NULL)) {
             return NC_ADMIN_ERROR;
         }
         return nc_admin_list_buckets(host);
     }
 
-    nc_admin_print(
-        "Unknown command, available commands are:" CRLF
-        "    set-bucket-prop bucket property value - set bucket property" CRLF
-        "    get-bucket-prop bucker property - get property value" CRLF
-        "    list-buckets - list existing buckets with properties" CRLF
-        "    list-bucket-props - list allowed properties for buckets" CRLF
-        "");
+    nc_admin_print("Unknown command");
+    nc_admin_show_usage();
     return NC_ADMIN_ERROR;
 }

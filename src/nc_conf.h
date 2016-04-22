@@ -164,6 +164,9 @@ char *conf_set_server_ttl(struct conf *cf, struct command *cmd, void *conf);
 rstatus_t conf_server_each_transform(void *elem, void *data);
 rstatus_t conf_pool_each_transform(void *elem, void *data);
 
+char *conf_read_ttl_value(struct string *value, int64_t *np);
+char *conf_parse_datatype_bucket(uint8_t *data, uint32_t len, struct bucket_prop *field);
+
 struct conf *conf_create(char *filename);
 void conf_destroy(struct conf *cf);
 

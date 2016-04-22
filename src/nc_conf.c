@@ -21,7 +21,6 @@
 #include <proto/nc_proto.h>
 
 char* conf_add_server_(struct conf *cf, struct command *cmd, void *conf, bool backend);
-char *conf_read_ttl_value(struct string *value, int64_t *np);
 
 #define DEFINE_ACTION(_hash, _name) string(#_name),
 static struct string hash_strings[] = {
@@ -1917,6 +1916,26 @@ conf_read_ttl_value(struct string *value, int64_t *np)
 }
 
 char *
+conf_parse_datatype_bucket(uint8_t *data, uint32_t len,
+                           struct bucket_prop *field)
+{
+    uint8_t *vptr = data;
+    uint8_t *eptr = data + len;
+    while (*vptr != ':' && vptr < eptr) {
+        vptr++;
+    }
+    if ((vptr + 1) >= eptr || vptr == data) {
+        return CONF_ERROR;
+    }
+
+    field->datatype.len = (uint32_t)(vptr - data);
+    field->datatype.data = nc_strndup(data, field->datatype.len);
+    field->bucket.len = len - (uint32_t)(vptr - data + 1);
+    field->bucket.data = nc_strndup(vptr + 1, field->bucket.len);
+    return CONF_OK;
+}
+
+char *
 conf_add_bucket_prop(struct conf *cf, struct command *cmd, void *conf)
 {
     typedef enum {
@@ -1936,23 +1955,17 @@ conf_add_bucket_prop(struct conf *cf, struct command *cmd, void *conf)
     if (name->len == 0) {
         return CONF_ERROR;
     }
-    uint8_t *vptr = name->data;
-    uint8_t *eptr = name->data + name->len;
-    while (*vptr != ':' && vptr < eptr) {
-        vptr++;
-    }
-    if ((vptr + 1) >= eptr || vptr == name->data) {
-        return CONF_ERROR;
-    }
 
     field = array_push(a);
     if (field == NULL) {
         return CONF_ERROR;
     }
-    field->datatype.len = (uint32_t)(vptr - name->data);
-    field->datatype.data = nc_strndup(name->data, field->datatype.len);
-    field->bucket.len = name->len - (uint32_t)(vptr - name->data + 1);
-    field->bucket.data = nc_strndup(vptr + 1, field->bucket.len);
+
+    status = conf_parse_datatype_bucket(name->data, name->len, field);
+    if (status != CONF_OK) {
+        array_pop(a);
+        return status;
+    }
     // Init default values for fields
     field->ttl_ms = CONF_UNSET_NUM;
 

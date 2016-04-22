@@ -16,6 +16,7 @@ bool nc_admin_connection_set_bucket_prop(int sock, const char *bucket,
                                         const char *prop, const char *value);
 RpbGetResp *nc_admin_connection_get_bucket_prop(int sock, const char *bucket,
                                                 const char *prop);
+bool nc_admin_connection_del_bucket(int sock, const char *bucket);
 DtFetchResp *nc_admin_connection_list_buckets(int sock);
 bool nc_admin_connection_get_counter(int sock, int64_t *val);
 

@@ -97,6 +97,10 @@ pack_buffer(riak_req_t type, const void *req, uint32_t *pack_size)
         *pack_size = (uint32_t)rpb_get_req__get_packed_size((RpbGetReq *)req);
         func = (pack_func)rpb_get_req__pack;
         break;
+    case REQ_RIAK_DEL:
+        *pack_size = (uint32_t)rpb_del_req__get_packed_size((RpbDelReq *)req);
+        func = (pack_func)rpb_del_req__pack;
+        break;
     case REQ_RIAK_DT_FETCH:
         *pack_size = (uint32_t)dt_fetch_req__get_packed_size((DtFetchReq *)req);
         func = (pack_func)dt_fetch_req__pack;
@@ -304,6 +308,63 @@ nc_admin_connection_get_bucket_prop(int sock, const char *bucket,
     return get_request(sock, bucket, prop);
 }
 
+bool
+nc_admin_connection_del_bucket(int sock, const char *bucket)
+{
+    uint32_t i = 0;
+    while (ALLOWED_PROPERTIES[i][0]) {
+        RpbDelReq req = RPB_DEL_REQ__INIT;
+        req.has_type = 1;
+        req.type.data = (uint8_t *)RRA_DATATYPE;
+        req.type.len = RRA_DATATYPE_LEN;
+        req.bucket.data = (uint8_t *)bucket;
+        req.bucket.len = nc_strlen(bucket);
+        req.key.data = (uint8_t *)ALLOWED_PROPERTIES[i];
+        req.key.len = nc_strlen(ALLOWED_PROPERTIES[i]);
+        uint32_t len;
+        uint8_t *rsp = riak_send(sock, REQ_RIAK_DEL, &req, &len);
+        if (rsp == NULL) {
+            return false;
+        }
+        uint8_t id = rsp[0];
+        nc_free(rsp);
+        if (id != RSP_RIAK_DEL) {
+            return false;
+        }
+        i++;
+    }
+    /* update set with list of buckets */
+    DtUpdateReq ureq = DT_UPDATE_REQ__INIT;
+    DtOp uop = DT_OP__INIT;
+    SetOp setop = SET_OP__INIT;
+    ProtobufCBinaryData setvalue;
+    ureq.has_key = 1;
+    ureq.op = &uop;
+    uop.set_op = &setop;
+    setop.n_removes = 1;
+    setop.removes = &setvalue;
+    setvalue.data = (uint8_t *)bucket;
+    setvalue.len = nc_strlen(bucket);
+    ureq.type.data = (uint8_t *)RRA_SET_DATATYPE;
+    ureq.type.len = RRA_SET_DATATYPE_LEN;
+    ureq.bucket.data = (uint8_t *)RRA_SERVICE_BUCKET;
+    ureq.bucket.len = RRA_SERVICE_BUCKET_LEN;
+    ureq.has_key = 1;
+    ureq.key.data = (uint8_t *)RRA_SERVICE_KEY;
+    ureq.key.len = RRA_SERVICE_KEY_LEN;
+    uint32_t len;
+    uint8_t *ursp = riak_send(sock, REQ_RIAK_DT_UPDATE, &ureq, &len);
+    if (ursp == NULL) {
+        return false;
+    }
+    uint8_t id = ursp[0];
+    nc_free(ursp);
+    if (id != RSP_RIAK_DT_UPDATE) {
+        return false;
+    }
+    return true;
+}
+
 DtFetchResp *
 nc_admin_connection_list_buckets(int sock)
 {
@@ -346,6 +407,10 @@ nc_admin_connection_get_counter(int sock, int64_t *val)
     nc_free(rsp);
     if (rpbresp == NULL) {
         return false;
+    }
+    if (rpbresp->value == NULL) {
+        *val = 0;
+        return true;
     }
     *val = rpbresp->value->has_counter_value ?
                       rpbresp->value->counter_value : 0;

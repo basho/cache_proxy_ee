@@ -225,6 +225,8 @@ nc_show_usage(void)
         "  -i, --stats-interval=N : set stats aggregation interval in msec (default: %d msec)" CRLF
         "  -p, --pid-file=S       : set pid file (default: %s)" CRLF
         "  -m, --mbuf-size=N      : set size of mbuf chunk in bytes (default: %d bytes)" CRLF
+        "" CRLF
+        "nutcracker admin is an embedded admin tool, run 'nutcracker admin' for details" CRLF
         "",
         NC_LOG_DEFAULT, NC_LOG_MIN, NC_LOG_MAX,
         NC_LOG_PATH != NULL ? NC_LOG_PATH : "stderr",
@@ -537,6 +539,7 @@ nc_run(struct instance *nci)
         if (status != NC_OK) {
             break;
         }
+        nc_admin_poll_sync();
     }
 
     core_stop(ctx);
@@ -554,7 +557,7 @@ main(int argc, char **argv)
                 char *arg3 = argc > 6 ? argv[6] : NULL;
                 return nc_admin_command(argv[2], argv[3], arg1, arg2, arg3);
             } else {
-                nc_show_usage();
+                nc_admin_show_usage();
                 exit(1);
             }
         }

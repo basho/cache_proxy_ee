@@ -22,5 +22,6 @@ extern const char *ALLOWED_PROPERTIES[];
 int nc_admin_command(const char *host, const char *command,
                      const char *arg1, const char *arg2,
                      const char *arg3);
+void nc_admin_show_usage(void);
 
 #endif /* _NC_ADMIN_H_ */
