@@ -16,9 +16,10 @@
  */
 #include <nc_admin.h>
 #include <nc_admin_connection.h>
+#include <nc_admin_poll.h>
 #include <nc_core.h>
+#include <nc_util.h>
 #include <nc_string.h>
-#include <nc_conf.h>
 
 /*
  * To enable datatypes which is require for this admin util, run:
@@ -58,7 +59,6 @@ nc_admin_print(const char *format, ...)
     printf(CRLF);
     return res;
 }
-
 
 static int
 nc_admin_set_bucket_prop(const char *host, const char *bucket,
@@ -166,6 +166,36 @@ nc_admin_list_buckets(const char *host)
 }
 
 static int
+nc_admin_list_all(const char *host)
+{
+    int sock = nc_admin_connection_resolve_connect(host);
+    if (sock == INVALID_SOCKET) {
+        nc_admin_print("Error while connecting to riak");
+        return NC_ADMIN_ERROR;
+    }
+    struct array bucket_props;
+    bool res = nc_admin_poll_buckets(sock, &bucket_props);
+    nc_admin_connection_disconnect(sock);
+    if (res) {
+        if (array_n(&bucket_props) == 0) {
+            nc_admin_print("Nothing found");
+            return NC_ADMIN_OK;
+        }
+        while (array_n(&bucket_props) != 0) {
+            struct bucket_prop *bp = array_pop(&bucket_props);
+            nc_admin_print("%.*s:%.*s", bp->datatype.len, bp->datatype.data,
+                           bp->bucket.len, bp->bucket.data);
+            nc_admin_print("  ttl: %"PRIi64" ms", bp->ttl_ms);
+            //string_deinit(&bp->datatype);
+            //string_deinit(&bp->bucket);
+        }
+        array_deinit(&bucket_props);
+        return NC_ADMIN_OK;
+    }
+    return NC_ADMIN_ERROR;
+}
+
+static int
 nc_admin_check_args(int need, const char *arg1, const char *arg2,
                     const char *arg3, const char *bucket, const char *prop,
                     const char *value)
@@ -196,8 +226,7 @@ nc_admin_check_args(int need, const char *arg1, const char *arg2,
             ptr++;
         }
         if (*ptr == 0) {
-            nc_admin_print("Bucket datatype require, specify it like 'datatype:bucket'");
-            return NC_ADMIN_ERROR;
+            nc_admin_print("Use 'default' datatype for bucket '%s'", bucket);
         }
     }
     if (prop == NULL) {
@@ -211,7 +240,7 @@ nc_admin_check_args(int need, const char *arg1, const char *arg2,
                 int64_t ttl;
                 if (nc_strcmp(prop, "ttl") == 0) {
                     struct string str = {nc_strlen(value), (uint8_t *)value};
-                    if (conf_read_ttl_value(&str, &ttl) != CONF_OK) {
+                    if (!nc_read_ttl_value(&str, &ttl)) {
                         nc_admin_print("Wrong ttl value");
                         return NC_ADMIN_ERROR;
                     }
@@ -236,6 +265,7 @@ nc_admin_show_usage(void)
         "    del-bucket bucket - delete bucket" CRLF
         "    list-buckets - list existing buckets with properties" CRLF
         "    list-bucket-props - list allowed properties for buckets" CRLF
+        "    list-all - list all buckets with all properties and values" CRLF
         "");
 }
 
@@ -255,7 +285,7 @@ nc_admin_command(const char *host, const char *command,
         }
         return nc_admin_get_bucket_prop(host, arg1, arg2);
     } else if (nc_strcmp(command, "del-bucket") == 0) {
-        if(nc_admin_check_args(1, arg1, arg2, arg3, arg1, NULL, NULL)) {
+        if(nc_admin_check_args(1, arg1, arg2, arg3, NULL, NULL, NULL)) {
             return NC_ADMIN_ERROR;
         }
         return nc_admin_del_bucket(host, arg1);
@@ -269,6 +299,11 @@ nc_admin_command(const char *host, const char *command,
             return NC_ADMIN_ERROR;
         }
         return nc_admin_list_buckets(host);
+    } else if (nc_strcmp(command, "list-all") == 0) {
+        if(nc_admin_check_args(0, arg1, arg2, arg3, NULL, NULL, NULL)) {
+            return NC_ADMIN_ERROR;
+        }
+        return nc_admin_list_all(host);
     }
 
     nc_admin_print("Unknown command");

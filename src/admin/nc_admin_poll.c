@@ -18,8 +18,9 @@
 
 #include <nc_core.h>
 #include <nc_log.h>
-#include <nc_conf.h>
+#include <nc_util.h>
 #include <nc_string.h>
+#include <nc_server.h>
 
 #include <nc_admin.h>
 #include <nc_admin_poll.h>
@@ -36,17 +37,6 @@ struct update_item {
 };
 
 struct array update_items;
-
-static void
-free_bucket_props_array(struct array *bpa)
-{
-    while (array_n(bpa) != 0) {
-        struct bucket_prop *bp = array_pop(bpa);
-        string_deinit(&bp->bucket);
-        string_deinit(&bp->datatype);
-    }
-    array_deinit(bpa);
-}
 
 static bool
 nc_admin_poll_bucket_props(int sock, uint8_t *bucket, struct bucket_prop *bp)
@@ -70,7 +60,7 @@ nc_admin_poll_bucket_props(int sock, uint8_t *bucket, struct bucket_prop *bp)
             struct string value;
             value.data = prop->content[0]->value.data;
             value.len = prop->content[0]->value.len;
-            if (conf_read_ttl_value(&value, &bp->ttl_ms) != CONF_OK) {
+            if (!nc_read_ttl_value(&value, &bp->ttl_ms)) {
                 nc_free(prop);
                 return false;
             }
@@ -79,13 +69,14 @@ nc_admin_poll_bucket_props(int sock, uint8_t *bucket, struct bucket_prop *bp)
         i++;
     }
     uint32_t bucketlen = nc_strlen(bucket);
-    if (conf_parse_datatype_bucket(bucket, bucketlen, bp) != CONF_OK) {
+    if (!nc_parse_datatype_bucket(bucket, bucketlen, &bp->datatype,
+                                  &bp->bucket)) {
         return false;
     }
     return true;
 }
 
-static bool
+bool
 nc_admin_poll_buckets(int sock, struct array *bucket_props)
 {
     uint32_t i;
@@ -218,7 +209,7 @@ nc_admin_poll_stop(void)
     nc_free(service_key);
     while (array_n(&update_items) != 0) {
         struct update_item *item = array_pop(&update_items);
-        free_bucket_props_array(&item->bucket_props);
+        server_pool_bp_deinit(&item->bucket_props);
     }
     array_deinit(&update_items);
 }
@@ -229,7 +220,7 @@ nc_admin_poll_sync(void)
     while (array_n(&update_items) != 0) {
         pthread_mutex_lock(&array_mutex);
         struct update_item *item = array_pop(&update_items);
-        free_bucket_props_array(&item->pool->backend_opt.bucket_prop);
+        server_pool_bp_deinit(&item->pool->backend_opt.bucket_prop);
         item->pool->backend_opt.bucket_prop = item->bucket_props;
         pthread_mutex_unlock(&array_mutex);
         log_debug(LOG_DEBUG, "Update %d buckets props in pool '%.*s'",

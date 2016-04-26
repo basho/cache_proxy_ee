@@ -1,7 +1,6 @@
 MAINTAINERCLEANFILES = Makefile.in
 
 AM_CPPFLAGS = -I $(top_srcdir)/src
-AM_CPPFLAGS += -I $(top_srcdir)/contrib/yaml-0.1.4/include
 
 AM_CFLAGS = -Wall -Wshadow
 AM_CFLAGS += -Wno-unused-parameter -Wno-unused-value

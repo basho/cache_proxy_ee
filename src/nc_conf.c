@@ -18,6 +18,7 @@
 #include <nc_core.h>
 #include <nc_conf.h>
 #include <nc_server.h>
+#include <nc_util.h>
 #include <proto/nc_proto.h>
 
 char* conf_add_server_(struct conf *cf, struct command *cmd, void *conf, bool backend);
@@ -42,24 +43,6 @@ static struct string dist_strings[] = {
     null_string
 };
 #undef DEFINE_ACTION
-
-struct unit {
-    char* name;
-    double toms;
-};
-
-static struct unit units[] = {
-    {"ms",               1},
-    {"s",             1000},
-    {"sec",           1000},
-    {"min",        60*1000},
-    {"hr",       3600*1000},
-    {"hour",     3600*1000},
-    {"hours",    3600*1000},
-    {"day",   24*3600*1000},
-    {"days",  24*3600*1000},
-    { "",                0},
-};
 
 static struct command conf_commands[] = {
     { string("listen"),
@@ -1881,61 +1864,6 @@ conf_add_server_be(struct conf *cf, struct command *cmd, void *conf)
 }
 
 char *
-conf_read_ttl_value(struct string *value, int64_t *np)
-{
-    char* val = (char*)value->data;
-    char* ptr = 0;
-
-    double dval = strtod(val, &ptr);
-
-    if (ptr == val) {
-        return CONF_ERROR;
-    }
-
-    uint32_t unit_len = 0;
-    char unitstr[value->len+1];
-
-    while (*ptr != '\0') {
-        if (isalpha(*ptr) && !isspace(*ptr))
-            unitstr[unit_len++] = *ptr;
-        ptr++;
-    }
-    unitstr[unit_len] = '\0';
-
-    struct unit* unitptr=0;
-    for (unitptr = units; strlen(unitptr->name) != 0; unitptr++) {
-        if (strlen(unitptr->name) == strlen(unitstr)) {
-            if (strcasecmp(unitptr->name, unitstr) == 0) {
-                *np = (int64_t)(dval * unitptr->toms);
-                return CONF_OK;
-            }
-        }
-    }
-
-    return (void*)"has invalid units";
-}
-
-char *
-conf_parse_datatype_bucket(uint8_t *data, uint32_t len,
-                           struct bucket_prop *field)
-{
-    uint8_t *vptr = data;
-    uint8_t *eptr = data + len;
-    while (*vptr != ':' && vptr < eptr) {
-        vptr++;
-    }
-    if ((vptr + 1) >= eptr || vptr == data) {
-        return CONF_ERROR;
-    }
-
-    field->datatype.len = (uint32_t)(vptr - data);
-    field->datatype.data = nc_strndup(data, field->datatype.len);
-    field->bucket.len = len - (uint32_t)(vptr - data + 1);
-    field->bucket.data = nc_strndup(vptr + 1, field->bucket.len);
-    return CONF_OK;
-}
-
-char *
 conf_add_bucket_prop(struct conf *cf, struct command *cmd, void *conf)
 {
     typedef enum {
@@ -1944,7 +1872,6 @@ conf_add_bucket_prop(struct conf *cf, struct command *cmd, void *conf)
     } BP_READSTATE;
 
     const struct string ttl_str = string("ttl");
-    char *status;
     struct array *a;
     struct string value;
     struct bucket_prop *field;
@@ -1961,10 +1888,10 @@ conf_add_bucket_prop(struct conf *cf, struct command *cmd, void *conf)
         return CONF_ERROR;
     }
 
-    status = conf_parse_datatype_bucket(name->data, name->len, field);
-    if (status != CONF_OK) {
+    if (!nc_parse_datatype_bucket(name->data, name->len, &field->datatype,
+                                  &field->bucket)) {
         array_pop(a);
-        return status;
+        return CONF_ERROR;
     }
     // Init default values for fields
     field->ttl_ms = CONF_UNSET_NUM;
@@ -1993,10 +1920,7 @@ conf_add_bucket_prop(struct conf *cf, struct command *cmd, void *conf)
                 }
                 break;
             case BPR_TTL:
-                status = conf_read_ttl_value(&value, &field->ttl_ms);
-                if (status != CONF_OK) {
-                    error = true;
-                }
+                error = !nc_read_ttl_value(&value, &field->ttl_ms);
                 state = BPR_NONE;
                 break;
             }
@@ -2030,7 +1954,7 @@ conf_set_server_ttl(struct conf *cf, struct command *cmd, void *conf)
 
     value = array_top(&cf->arg);
 
-    return conf_read_ttl_value(value, np);
+    return nc_read_ttl_value(value, np) ? CONF_OK : CONF_ERROR;
 }
 
 char *

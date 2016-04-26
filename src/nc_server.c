@@ -969,6 +969,17 @@ servers_deinit(struct servers *servers)
 }
 
 void
+server_pool_bp_deinit(struct array *bpa)
+{
+    while (array_n(bpa) != 0) {
+        struct bucket_prop *bp = array_pop(bpa);
+        string_deinit(&bp->bucket);
+        string_deinit(&bp->datatype);
+    }
+    array_deinit(bpa);
+}
+
+void
 server_pool_deinit(struct array *server_pool)
 {
     uint32_t i, npool;
@@ -982,6 +993,7 @@ server_pool_deinit(struct array *server_pool)
 
         servers_deinit(&sp->frontends);
         servers_deinit(&sp->backends);
+        server_pool_bp_deinit(&sp->backend_opt.bucket_prop);
 
         log_debug(LOG_DEBUG, "deinit pool %"PRIu32" '%.*s'", sp->idx,
                   sp->name.len, sp->name.data);

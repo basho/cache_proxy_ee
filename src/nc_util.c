@@ -37,6 +37,24 @@
 # include <execinfo.h>
 #endif
 
+struct unit {
+    char* name;
+    double toms;
+};
+
+static struct unit units[] = {
+    {"ms",               1},
+    {"s",             1000},
+    {"sec",           1000},
+    {"min",        60*1000},
+    {"hr",       3600*1000},
+    {"hour",     3600*1000},
+    {"hours",    3600*1000},
+    {"day",   24*3600*1000},
+    {"days",  24*3600*1000},
+    { "",                0},
+};
+
 int
 nc_set_blocking(int sd)
 {
@@ -713,4 +731,66 @@ nc_split_key_string(uint8_t *keystring, size_t keystringlen,
         bucket->len = datatype->len;
         datatype->len = 0;
     }
+}
+
+bool
+nc_read_ttl_value(struct string *value, int64_t *np)
+{
+    char* val = (char*)value->data;
+    char* ptr = 0;
+
+    double dval = strtod(val, &ptr);
+
+    if (ptr == val) {
+        return false;
+    }
+
+    uint32_t unit_len = 0;
+    char unitstr[value->len+1];
+
+    while (*ptr != '\0') {
+        if (isalpha(*ptr) && !isspace(*ptr))
+            unitstr[unit_len++] = *ptr;
+        ptr++;
+    }
+    unitstr[unit_len] = '\0';
+
+    struct unit* unitptr=0;
+    for (unitptr = units; strlen(unitptr->name) != 0; unitptr++) {
+        if (strlen(unitptr->name) == strlen(unitstr)) {
+            if (strcasecmp(unitptr->name, unitstr) == 0) {
+                *np = (int64_t)(dval * unitptr->toms);
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+bool
+nc_parse_datatype_bucket(uint8_t *data, uint32_t len,
+                         struct string *datatype, struct string *bucket)
+{
+    const uint8_t default_datatype[] = "default";
+    uint8_t *vptr = data;
+    uint8_t *eptr = data + len;
+    while (*vptr != ':' && vptr < eptr) {
+        vptr++;
+    }
+    if (vptr == data) {
+        return false;
+    }
+    if ((vptr + 1) >= eptr) {
+        datatype->len = sizeof(default_datatype) - 1;
+        datatype->data = nc_strndup(default_datatype, datatype->len);
+        bucket->len = len;
+        bucket->data = nc_strndup(data, len);
+    } else {
+        datatype->len = (uint32_t) (vptr - data);
+        datatype->data = nc_strndup(data, datatype->len);
+        bucket->len = len - (uint32_t) (vptr - data + 1);
+        bucket->data = nc_strndup(vptr + 1, bucket->len);
+    }
+    return true;
 }
