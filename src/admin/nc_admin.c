@@ -21,16 +21,6 @@
 #include <nc_util.h>
 #include <nc_string.h>
 
-/*
- * To enable datatypes which is require for this admin util, run:
- * riak-admin bucket-type create rra
- * riak-admin bucket-type activate rra
- * riak-admin bucket-type create rra_set '{"props":{"datatype":"set"}}'
- * riak-admin bucket-type activate rra_set
- * riak-admin bucket-type create rra_counter '{"props":{"datatype":"counter"}}'
- * riak-admin bucket-type activate rra_counter
- */
-
 const uint8_t RRA_DATATYPE[] = "rra";
 const size_t RRA_DATATYPE_LEN = sizeof(RRA_DATATYPE) - 1;
 const uint8_t RRA_SET_DATATYPE[] = "rra_set";

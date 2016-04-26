@@ -72,6 +72,7 @@ A quick checklist:
     Usage: nutcracker [-?hVdDt] [-v verbosity level] [-o output file]
                       [-c conf file] [-s stats port] [-a stats addr]
                       [-i stats interval] [-p pid file] [-m mbuf size]
+           nutcracker admin riak_host:riak_port command args
 
     Options:
       -h, --help             : this help
@@ -87,6 +88,8 @@ A quick checklist:
       -i, --stats-interval=N : set stats aggregation interval in msec (default: 30000 msec)
       -p, --pid-file=S       : set pid file (default: off)
       -m, --mbuf-size=N      : set size of mbuf chunk in bytes (default: 16384 bytes)
+
+    nutcracker admin is an embedded admin tool, run 'nutcracker admin' for details
 
 ## Configuration ##
 BDP Cache Proxy can be configured through a YAML file specified by the -c or --conf-file
@@ -137,6 +140,28 @@ For example, see the configuration file in [conf/cache_proxy.yml](conf/cache_pro
 Finally, to make writing a syntactically correct configuration file easier, BDP Cache Proxy
 provides a command-line argument -t or --test-conf that can be used to test the YAML
 configuration file for any syntax error.
+
+## Centralized configuration ##
+nutcracker has a centralized configuration for per bucket properties which are stored in riak cluster. Nutcracker poll this configurations from cluster ever 15s. Configuration is saved in special key with special datatypes: 'rra', 'rra_set', 'rra_counter'. Do not use datatypes with the same names in order to rewrite this configuration. To enable this feature on riak cluster, this datatypes should be created and enabled on riak cluster with follow commands:
+```bash
+riak-admin bucket-type create rra
+riak-admin bucket-type activate rra
+riak-admin bucket-type create rra_set '{"props":{"datatype":"set"}}'
+riak-admin bucket-type activate rra_set
+riak-admin bucket-type create rra_counter '{"props":{"datatype":"counter"}}'
+riak-admin bucket-type activate rra_counter
+```
+
+## Administrative util ##
+'nutcracker admin' is a an embedded administrative util for storing configuration for a centralized configuration. Each 'datatype:bucket' might have an additional properties for handling keys. List of such properties is:
++ **ttl**: time to live, how long key will be stored in cache before expiring
+
+First agrument should be any riak node from cluster where configuration should changed. Second argument is a command. This util can get, set and delete such properties. See 'nutcracker admin' command output to see all list of commands.  
+
+Example:
+nutcracker admin localhost set-bucket-prop bucket ttl 5ms
+
+Every bucket without explicit datatype handles as 'default' datatype.
 
 ## Observability
 
