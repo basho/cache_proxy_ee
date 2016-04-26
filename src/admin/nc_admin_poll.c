@@ -15,6 +15,10 @@
  * limitations under the License.
  */
 #include <pthread.h>
+#ifdef __MACH__
+#include <mach/clock.h>
+#include <mach/mach.h>
+#endif
 
 #include <nc_core.h>
 #include <nc_log.h>
@@ -37,6 +41,22 @@ struct update_item {
 };
 
 struct array update_items;
+
+static void
+get_abs_time(struct timespec *abs_time)
+{
+#ifdef __MACH__ // OS X doesn't implement clock_gettime,
+  clock_serv_t clock_srv;
+  mach_timespec_t m_abs_time;
+  host_get_clock_service(mach_host_self(), CALENDAR_CLOCK, &clock_srv);
+  clock_get_time(clock_srv, &m_abs_time);
+  mach_port_deallocate(mach_task_self(), clock_srv);
+  abs_time->tv_sec = m_abs_time.tv_sec;
+  abs_time->tv_nsec = m_abs_time.tv_nsec;
+#else
+  clock_gettime(CLOCK_REALTIME, abs_time);
+#endif
+}
 
 static bool
 nc_admin_poll_bucket_props(int sock, uint8_t *bucket, struct bucket_prop *bp)
@@ -121,7 +141,7 @@ nc_admin_poll_loop(void *arg)
 
     for (;;) {
         /* sleep for POLL_TIMEOUT_SEC or exit when mutex is unlocked */
-        clock_gettime(CLOCK_REALTIME , &abs_time);
+        get_abs_time(&abs_time);
         abs_time.tv_sec += POLL_TIMEOUT_SEC;
         if (pthread_mutex_timedlock(&poll_mutex, &abs_time) == 0) {
             pthread_mutex_unlock(&poll_mutex);
