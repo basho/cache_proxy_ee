@@ -65,9 +65,6 @@ int string_compare(const struct string *s1, const struct string *s2);
 #define nc_strlen(_s)                   \
     strlen((char *)(_s))
 
-#define nc_strcmp(_s1, _s2)        \
-    strcmp((char *)(_s1), (char *)(_s2))
-
 #define nc_strncmp(_s1, _s2, _n)        \
     strncmp((char *)(_s1), (char *)(_s2), (size_t)(_n))
 

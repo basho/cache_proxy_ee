@@ -186,6 +186,17 @@ nc_admin_list_all(const char *host)
 }
 
 static bool
+strequ(const char *s1, const char *s2)
+{
+    const uint32_t s1_len = nc_strlen(s1);
+    const uint32_t s2_len = nc_strlen(s2);
+    if (s1_len == s2_len) {
+        return nc_strncmp(s1, s2, s1_len) == 0;
+    }
+    return false;
+}
+
+static bool
 nc_admin_check_args(int need, const char *arg1, const char *arg2,
                     const char *arg3, const char *prop,
                     const char *value)
@@ -212,11 +223,11 @@ nc_admin_check_args(int need, const char *arg1, const char *arg2,
     }
     uint32_t i = 0;
     while (ALLOWED_PROPERTIES[i][0]) {
-        if (nc_strcmp(prop, ALLOWED_PROPERTIES[i]) == 0) {
+        if (strequ(prop, ALLOWED_PROPERTIES[i])) {
             /* validate prop values */
             if (value) {
                 int64_t ttl;
-                if (nc_strcmp(prop, "ttl") == 0) {
+                if (strequ(prop, "ttl")) {
                     struct string str = {nc_strlen(value), (uint8_t *)value};
                     if (!nc_read_ttl_value(&str, &ttl)) {
                         nc_admin_print("Wrong ttl value");
@@ -279,7 +290,7 @@ nc_admin_command(const char *host, const char *command,
 {
     int res = NC_ADMIN_ERROR;
     char *bucket;
-    if (nc_strcmp(command, "set-bucket-prop") == 0) {
+    if (strequ(command, "set-bucket-prop")) {
         if (nc_admin_check_args(3, arg1, arg2, arg3, arg2, arg3)) {
             bucket = nc_admin_check_bucket(arg1);
             if (bucket) {
@@ -287,7 +298,7 @@ nc_admin_command(const char *host, const char *command,
                 nc_free(bucket);
             }
         }
-    } else if (nc_strcmp(command, "get-bucket-prop") == 0) {
+    } else if (strequ(command, "get-bucket-prop")) {
         if(nc_admin_check_args(2, arg1, arg2, arg3, arg2, NULL)) {//
             bucket = nc_admin_check_bucket(arg1);
             if (bucket) {
@@ -295,7 +306,7 @@ nc_admin_command(const char *host, const char *command,
                 nc_free(bucket);
             }
         }
-    } else if (nc_strcmp(command, "del-bucket") == 0) {
+    } else if (strequ(command, "del-bucket")) {
         if (nc_admin_check_args(1, arg1, arg2, arg3, NULL, NULL)) {
             bucket = nc_admin_check_bucket(arg1);
             if (bucket) {
@@ -303,15 +314,15 @@ nc_admin_command(const char *host, const char *command,
                 nc_free(bucket);
             }
         }
-    } else if (nc_strcmp(command, "list-bucket-props") == 0) {
+    } else if (strequ(command, "list-bucket-props")) {
         if (nc_admin_check_args(0, arg1, arg2, arg3, NULL, NULL)) {
             res = nc_admin_list_bucket_props(host);
         }
-    } else if (nc_strcmp(command, "list-buckets") == 0) {
+    } else if (strequ(command, "list-buckets")) {
         if (nc_admin_check_args(0, arg1, arg2, arg3, NULL, NULL)) {
             res = nc_admin_list_buckets(host);
         }
-    } else if (nc_strcmp(command, "list-all") == 0) {
+    } else if (strequ(command, "list-all")) {
         if(nc_admin_check_args(0, arg1, arg2, arg3, NULL, NULL)) {
             res = nc_admin_list_all(host);
         }
