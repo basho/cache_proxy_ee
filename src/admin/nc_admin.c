@@ -195,42 +195,30 @@ nc_admin_list_all(const char *host)
     return NC_ADMIN_ERROR;
 }
 
-static int
+static bool
 nc_admin_check_args(int need, const char *arg1, const char *arg2,
-                    const char *arg3, const char *bucket, const char *prop,
+                    const char *arg3, const char *prop,
                     const char *value)
 {
     if (arg1 == NULL && need > 0) {
         nc_admin_print("Bucket name require");
-        return NC_ADMIN_ERROR;
+        return false;
     }
     if (arg2 == NULL && need > 1) {
         nc_admin_print("Property name require");
-        return NC_ADMIN_ERROR;
+        return false;
     }
     if (arg3 == NULL && need > 2) {
         nc_admin_print("Value require");
-        return NC_ADMIN_ERROR;
+        return false;
     }
     if ((arg1 && need <= 0) || (arg2 && need <= 1) || (arg2 && need <= 1)) {
         nc_admin_print("Extra argument found");
-        return NC_ADMIN_ERROR;
+        return false;
     }
 
-    if (bucket) {
-        const char *ptr = bucket;
-        while (*ptr) {
-            if (*ptr == ':') {
-                break;
-            }
-            ptr++;
-        }
-        if (*ptr == 0) {
-            nc_admin_print("Use 'default' datatype for bucket '%s'", bucket);
-        }
-    }
     if (prop == NULL) {
-        return NC_ADMIN_OK;
+        return true;
     }
     uint32_t i = 0;
     while (ALLOWED_PROPERTIES[i][0]) {
@@ -242,16 +230,16 @@ nc_admin_check_args(int need, const char *arg1, const char *arg2,
                     struct string str = {nc_strlen(value), (uint8_t *)value};
                     if (!nc_read_ttl_value(&str, &ttl)) {
                         nc_admin_print("Wrong ttl value");
-                        return NC_ADMIN_ERROR;
+                        return false;
                     }
                 }
             }
-            return NC_ADMIN_OK;
+            return true;
         }
         i++;
     }
     nc_admin_print("Unknown bucket property");
-    return NC_ADMIN_ERROR;
+    return false;
 }
 
 void
@@ -269,44 +257,78 @@ nc_admin_show_usage(void)
         "");
 }
 
+static char *
+nc_admin_check_bucket(const char *str)
+{
+    struct string datatype;
+    struct string bucket;
+    char *res = NULL;
+    uint32_t str_len = nc_strlen(str);
+    if (nc_parse_datatype_bucket((uint8_t *)str, str_len, &datatype, &bucket)) {
+        if (str_len == bucket.len) {
+            nc_admin_print("Use '%.*s' datatype for bucket '%.*s'",
+                           datatype.len, datatype.data,
+                           bucket.len, bucket.data);
+        }
+        res = nc_alloc(datatype.len + bucket.len + 2);
+        if (res) {
+            int l = sprintf(res, "%.*s:%.*s", datatype.len,
+                            datatype.data, bucket.len, bucket.data);
+            ASSERT(l == datatype.len + bucket.len + 1);
+        }
+        string_deinit(&datatype);
+        string_deinit(&bucket);
+    }
+    return res;
+}
+
 int
 nc_admin_command(const char *host, const char *command,
                  const char *arg1, const char *arg2,
                  const char *arg3)
 {
+    int res = NC_ADMIN_ERROR;
+    char *bucket;
     if (nc_strcmp(command, "set-bucket-prop") == 0) {
-        if(nc_admin_check_args(3, arg1, arg2, arg3, arg1, arg2, arg3)) {
-            return NC_ADMIN_ERROR;
+        if (nc_admin_check_args(3, arg1, arg2, arg3, arg2, arg3)) {
+            bucket = nc_admin_check_bucket(arg1);
+            if (bucket) {
+                res = nc_admin_set_bucket_prop(host, bucket, arg2, arg3);
+                nc_free(bucket);
+            }
         }
-        return nc_admin_set_bucket_prop(host, arg1, arg2, arg3);
     } else if (nc_strcmp(command, "get-bucket-prop") == 0) {
-        if(nc_admin_check_args(2, arg1, arg2, arg3, arg1, arg2, NULL)) {
-            return NC_ADMIN_ERROR;
+        if(nc_admin_check_args(2, arg1, arg2, arg3, arg2, NULL)) {//
+            bucket = nc_admin_check_bucket(arg1);
+            if (bucket) {
+                res = nc_admin_get_bucket_prop(host, bucket, arg2);
+                nc_free(bucket);
+            }
         }
-        return nc_admin_get_bucket_prop(host, arg1, arg2);
     } else if (nc_strcmp(command, "del-bucket") == 0) {
-        if(nc_admin_check_args(1, arg1, arg2, arg3, NULL, NULL, NULL)) {
-            return NC_ADMIN_ERROR;
+        if (nc_admin_check_args(1, arg1, arg2, arg3, NULL, NULL)) {
+            bucket = nc_admin_check_bucket(arg1);
+            if (bucket) {
+                res = nc_admin_del_bucket(host, bucket);
+                nc_free(bucket);
+            }
         }
-        return nc_admin_del_bucket(host, arg1);
     } else if (nc_strcmp(command, "list-bucket-props") == 0) {
-        if(nc_admin_check_args(0, arg1, arg2, arg3, NULL, NULL, NULL)) {
-            return NC_ADMIN_ERROR;
+        if (nc_admin_check_args(0, arg1, arg2, arg3, NULL, NULL)) {
+            res = nc_admin_list_bucket_props(host);
         }
-        return nc_admin_list_bucket_props(host);
     } else if (nc_strcmp(command, "list-buckets") == 0) {
-        if(nc_admin_check_args(0, arg1, arg2, arg3, NULL, NULL, NULL)) {
-            return NC_ADMIN_ERROR;
+        if (nc_admin_check_args(0, arg1, arg2, arg3, NULL, NULL)) {
+            res = nc_admin_list_buckets(host);
         }
-        return nc_admin_list_buckets(host);
     } else if (nc_strcmp(command, "list-all") == 0) {
-        if(nc_admin_check_args(0, arg1, arg2, arg3, NULL, NULL, NULL)) {
-            return NC_ADMIN_ERROR;
+        if(nc_admin_check_args(0, arg1, arg2, arg3, NULL, NULL)) {
+            res = nc_admin_list_all(host);
         }
-        return nc_admin_list_all(host);
+    } else {
+        nc_admin_print("Unknown command");
+        nc_admin_show_usage();
     }
 
-    nc_admin_print("Unknown command");
-    nc_admin_show_usage();
-    return NC_ADMIN_ERROR;
+    return res;
 }
