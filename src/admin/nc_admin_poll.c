@@ -58,6 +58,18 @@ get_abs_time(struct timespec *abs_time)
 #endif
 }
 
+static void
+nc_admin_poll_default_bp(struct bucket_prop *bp, struct server_pool *pool)
+{
+    ASSERT(bp);
+    ASSERT(pool);
+    bp->bucket.len = 0;
+    bp->bucket.data = NULL;
+    bp->datatype.len = 0;
+    bp->datatype.data = NULL;
+    bp->ttl_ms = pool->server_ttl_ms;
+}
+
 static bool
 nc_admin_poll_bucket_props(int sock, uint8_t *bucket, struct bucket_prop *bp)
 {
@@ -68,23 +80,19 @@ nc_admin_poll_bucket_props(int sock, uint8_t *bucket, struct bucket_prop *bp)
         if (prop == NULL) {
             return false;
         }
-        if (prop->n_content == 0) {
-            nc_free(prop);
-            continue;
-        }
-        if (prop->content[0]->value.len == 0) {
-            nc_free(prop);
-            return false;
-        }
-        if (strcmp(ALLOWED_PROPERTIES[i], "ttl") == 0) {
-            struct string value;
-            value.data = prop->content[0]->value.data;
-            value.len = prop->content[0]->value.len;
-            if (!nc_read_ttl_value(&value, &bp->ttl_ms)) {
-                nc_free(prop);
-                return false;
+        if (prop->n_content > 0) {
+            if (prop->content[0]->value.len > 0) {
+                if (nc_c_strequ(ALLOWED_PROPERTIES[i], "ttl")) {
+                    struct string value;
+                    value.data = prop->content[0]->value.data;
+                    value.len = prop->content[0]->value.len;
+                    if (!nc_read_ttl_value(&value, &bp->ttl_ms)) {
+                        nc_free(prop);
+                        return false;
+                    }
+                }
             }
-        } /* else if () and do not forget default values for non existing props*/
+        }
         nc_free(prop);
         i++;
     }
@@ -97,7 +105,8 @@ nc_admin_poll_bucket_props(int sock, uint8_t *bucket, struct bucket_prop *bp)
 }
 
 static bool
-nc_admin_poll_buckets(int sock, struct array *bucket_props)
+nc_admin_poll_buckets(int sock, struct array *bucket_props,
+                      struct server_pool *pool)
 {
     uint32_t i;
     DtFetchResp *bl = nc_admin_connection_list_buckets(sock);
@@ -115,10 +124,11 @@ nc_admin_poll_buckets(int sock, struct array *bucket_props)
         sprintf((char *)bucket, "%.*s", (int)bl->value->set_value[i].len,
                 bl->value->set_value[i].data);
         struct bucket_prop bp;
+        nc_admin_poll_default_bp(&bp, pool);
         if (nc_admin_poll_bucket_props(sock, bucket, &bp)) {
             struct bucket_prop *n = array_push(bucket_props);
             *n = bp;
-        } /* else ignore one bucket if props failed */
+        }
     }
     nc_free(bl);
     if (array_n(bucket_props) == 0) {
@@ -169,7 +179,7 @@ nc_admin_poll_loop(void *arg)
             log_debug(LOG_DEBUG, "Update config from '%.*s'",
                       server->name.len, server->name.data);
             struct array bucket_props;
-            if (nc_admin_poll_buckets(sock, &bucket_props)) {
+            if (nc_admin_poll_buckets(sock, &bucket_props, pool)) {
                 current_revision = revision;
                 pthread_mutex_lock(&array_mutex);
                 struct update_item *item = array_push(&update_items);

@@ -550,7 +550,7 @@ int
 main(int argc, char **argv)
 {
     if (argc > 1) {
-        if (strcmp(argv[1], "admin") == 0) {
+        if (nc_c_strequ(argv[1], "admin")) {
             if (argc > 3) {
                 char *arg1 = argc > 4 ? argv[4] : NULL;
                 char *arg2 = argc > 5 ? argv[5] : NULL;

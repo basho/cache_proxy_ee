@@ -230,13 +230,16 @@ nc_admin_list_all(const char *host)
             RpbGetResp *prop;
             prop = nc_admin_connection_get_bucket_prop(sock, (char *)bucket,
                                                        ALLOWED_PROPERTIES[j]);
-            if (prop != NULL) {
-                if (prop->n_content > 0) {
-                    if (prop->content[0]->value.len > 0) {
-                        nc_admin_print("  %s: %.*s", ALLOWED_PROPERTIES[j],
-                                       prop->content[0]->value.len,
-                                       prop->content[0]->value.data);
-                    }
+            if (prop == NULL) {
+                nc_admin_connection_disconnect(sock);
+                nc_free(bl);
+                return NC_ADMIN_ERROR;
+            }
+            if (prop->n_content > 0) {
+                if (prop->content[0]->value.len > 0) {
+                    nc_admin_print("  %s: %.*s", ALLOWED_PROPERTIES[j],
+                                   prop->content[0]->value.len,
+                                   prop->content[0]->value.data);
                 }
             }
             nc_free(prop);
@@ -247,17 +250,6 @@ nc_admin_list_all(const char *host)
     nc_free(bl);
 
     return NC_ADMIN_OK;
-}
-
-static bool
-strequ(const char *s1, const char *s2)
-{
-    const uint32_t s1_len = nc_strlen(s1);
-    const uint32_t s2_len = nc_strlen(s2);
-    if (s1_len == s2_len) {
-        return nc_strncmp(s1, s2, s1_len) == 0;
-    }
-    return false;
 }
 
 static bool
@@ -287,11 +279,11 @@ nc_admin_check_args(int need, const char *arg1, const char *arg2,
     }
     uint32_t i = 0;
     while (ALLOWED_PROPERTIES[i][0]) {
-        if (strequ(prop, ALLOWED_PROPERTIES[i])) {
+        if (nc_c_strequ(prop, ALLOWED_PROPERTIES[i])) {
             /* validate prop values */
             if (value) {
                 int64_t ttl;
-                if (strequ(prop, "ttl")) {
+                if (nc_c_strequ(prop, "ttl")) {
                     struct string str = {nc_strlen(value), (uint8_t *)value};
                     if (!nc_read_ttl_value(&str, &ttl)) {
                         nc_admin_print("Wrong ttl value");
@@ -360,7 +352,7 @@ nc_admin_command(const char *host, const char *command,
 {
     int res = NC_ADMIN_ERROR;
     char *bucket;
-    if (strequ(command, "set-bucket-prop")) {
+    if (nc_c_strequ(command, "set-bucket-prop")) {
         if (nc_admin_check_args(3, arg1, arg2, arg3, arg2, arg3)) {
             bucket = nc_admin_check_bucket(arg1);
             if (bucket) {
@@ -368,7 +360,7 @@ nc_admin_command(const char *host, const char *command,
                 nc_free(bucket);
             }
         }
-    } else if (strequ(command, "get-bucket-prop")) {
+    } else if (nc_c_strequ(command, "get-bucket-prop")) {
         if (nc_admin_check_args(2, arg1, arg2, arg3, arg2, NULL)) {//
             bucket = nc_admin_check_bucket(arg1);
             if (bucket) {
@@ -376,7 +368,7 @@ nc_admin_command(const char *host, const char *command,
                 nc_free(bucket);
             }
         }
-    } else if (strequ(command, "del-bucket")) {
+    } else if (nc_c_strequ(command, "del-bucket")) {
         if (nc_admin_check_args(1, arg1, arg2, arg3, NULL, NULL)) {
             bucket = nc_admin_check_bucket(arg1);
             if (bucket) {
@@ -384,7 +376,7 @@ nc_admin_command(const char *host, const char *command,
                 nc_free(bucket);
             }
         }
-    } else if (strequ(command, "del-bucket-prop")) {
+    } else if (nc_c_strequ(command, "del-bucket-prop")) {
         if (nc_admin_check_args(2, arg1, arg2, arg3, arg2, NULL)) {
             bucket = nc_admin_check_bucket(arg1);
             if (bucket) {
@@ -392,7 +384,7 @@ nc_admin_command(const char *host, const char *command,
                 nc_free(bucket);
             }
         }
-    } else if (strequ(command, "list-bucket-props")) {
+    } else if (nc_c_strequ(command, "list-bucket-props")) {
         if (nc_admin_check_args(1, arg1, arg2, arg3, NULL, NULL)) {
             bucket = nc_admin_check_bucket(arg1);
             if (bucket) {
@@ -400,11 +392,11 @@ nc_admin_command(const char *host, const char *command,
                 nc_free(bucket);
             }
         }
-    } else if (strequ(command, "list-buckets")) {
+    } else if (nc_c_strequ(command, "list-buckets")) {
         if (nc_admin_check_args(0, arg1, arg2, arg3, NULL, NULL)) {
             res = nc_admin_list_buckets(host);
         }
-    } else if (strequ(command, "list-all")) {
+    } else if (nc_c_strequ(command, "list-all")) {
         if (nc_admin_check_args(0, arg1, arg2, arg3, NULL, NULL)) {
             res = nc_admin_list_all(host);
         }

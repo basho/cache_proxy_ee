@@ -238,5 +238,6 @@ void nc_split_key_string(uint8_t *keystring, size_t keystringlen,
 bool nc_read_ttl_value(struct string *value, int64_t *np);
 bool nc_parse_datatype_bucket(uint8_t *data, uint32_t len,
                               struct string *datatype, struct string *bucket);
+bool nc_c_strequ(const char *s1, const char *s2);
 
 #endif

@@ -794,3 +794,14 @@ nc_parse_datatype_bucket(uint8_t *data, uint32_t len,
     }
     return true;
 }
+
+bool
+nc_c_strequ(const char *s1, const char *s2)
+{
+    const size_t s1_len = nc_strlen(s1);
+    const size_t s2_len = nc_strlen(s2);
+    if (s1_len == s2_len) {
+        return nc_strncmp(s1, s2, s1_len) == 0;
+    }
+    return false;
+}
