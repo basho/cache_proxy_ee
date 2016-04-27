@@ -309,26 +309,37 @@ nc_admin_connection_get_bucket_prop(int sock, const char *bucket,
 }
 
 bool
+nc_admin_connection_del_bucket_prop(int sock, const char *bucket,
+                                    const char *prop)
+{
+    RpbDelReq req = RPB_DEL_REQ__INIT;
+    req.has_type = 1;
+    req.type.data = (uint8_t *)RRA_DATATYPE;
+    req.type.len = RRA_DATATYPE_LEN;
+    req.bucket.data = (uint8_t *)bucket;
+    req.bucket.len = nc_strlen(bucket);
+    req.key.data = (uint8_t *)prop;
+    req.key.len = nc_strlen(prop);
+    uint32_t len;
+    uint8_t *rsp = riak_send(sock, REQ_RIAK_DEL, &req, &len);
+    if (rsp == NULL) {
+        return false;
+    }
+    uint8_t id = rsp[0];
+    nc_free(rsp);
+    if (id != RSP_RIAK_DEL) {
+        return false;
+    }
+    return true;
+}
+
+bool
 nc_admin_connection_del_bucket(int sock, const char *bucket)
 {
     uint32_t i = 0;
     while (ALLOWED_PROPERTIES[i][0]) {
-        RpbDelReq req = RPB_DEL_REQ__INIT;
-        req.has_type = 1;
-        req.type.data = (uint8_t *)RRA_DATATYPE;
-        req.type.len = RRA_DATATYPE_LEN;
-        req.bucket.data = (uint8_t *)bucket;
-        req.bucket.len = nc_strlen(bucket);
-        req.key.data = (uint8_t *)ALLOWED_PROPERTIES[i];
-        req.key.len = nc_strlen(ALLOWED_PROPERTIES[i]);
-        uint32_t len;
-        uint8_t *rsp = riak_send(sock, REQ_RIAK_DEL, &req, &len);
-        if (rsp == NULL) {
-            return false;
-        }
-        uint8_t id = rsp[0];
-        nc_free(rsp);
-        if (id != RSP_RIAK_DEL) {
+        if (!nc_admin_connection_del_bucket_prop(sock, bucket,
+                                                 ALLOWED_PROPERTIES[i])) {
             return false;
         }
         i++;

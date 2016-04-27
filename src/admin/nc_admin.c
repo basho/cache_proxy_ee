@@ -99,6 +99,24 @@ nc_admin_get_bucket_prop(const char *host, const char *bucket,
 }
 
 static int
+nc_admin_del_bucket_prop(const char *host, const char *bucket, const char *prop)
+{
+    int sock = nc_admin_connection_resolve_connect(host);
+    if (sock == INVALID_SOCKET) {
+        nc_admin_print("Error while connecting to riak");
+        return NC_ADMIN_ERROR;
+    }
+    bool res = nc_admin_connection_del_bucket_prop(sock, bucket, prop);
+    nc_admin_connection_disconnect(sock);
+    if (res) {
+        nc_admin_print("OK");
+        return NC_ADMIN_OK;
+    }
+    nc_admin_print("ERROR");
+    return NC_ADMIN_ERROR;
+}
+
+static int
 nc_admin_del_bucket(const char *host, const char *bucket)
 {
     int sock = nc_admin_connection_resolve_connect(host);
@@ -117,12 +135,37 @@ nc_admin_del_bucket(const char *host, const char *bucket)
 }
 
 static int
-nc_admin_list_bucket_props(const char *host)
+nc_admin_list_bucket_props(const char *host, const char *bucket)
 {
     uint32_t i = 0;
+    bool not_found = true;
+    int sock = nc_admin_connection_resolve_connect(host);
+    if (sock == INVALID_SOCKET) {
+        nc_admin_print("Error while connecting to riak");
+        return NC_ADMIN_ERROR;
+    }
     while (ALLOWED_PROPERTIES[i][0]) {
-        nc_admin_print(ALLOWED_PROPERTIES[i]);
+        RpbGetResp *rpbresp =
+                nc_admin_connection_get_bucket_prop(sock, bucket,
+                                                    ALLOWED_PROPERTIES[i]);
+        if (rpbresp) {
+            if (rpbresp->n_content != 0) {
+                if (rpbresp->n_content > 0) {
+                    nc_admin_print("%s", ALLOWED_PROPERTIES[i]);
+                    not_found = false;
+                }
+            }
+            nc_free(rpbresp);
+        } else {
+            nc_admin_print("Error while list bucket properties");
+            nc_admin_connection_disconnect(sock);
+            return NC_ADMIN_ERROR;
+        }
         i++;
+    }
+    nc_admin_connection_disconnect(sock);
+    if (not_found) {
+        nc_admin_print("Not found");
     }
     return NC_ADMIN_OK;
 }
@@ -158,31 +201,52 @@ nc_admin_list_buckets(const char *host)
 static int
 nc_admin_list_all(const char *host)
 {
+    uint32_t i;
+    uint32_t j;
     int sock = nc_admin_connection_resolve_connect(host);
     if (sock == INVALID_SOCKET) {
         nc_admin_print("Error while connecting to riak");
         return NC_ADMIN_ERROR;
     }
-    struct array bucket_props;
-    bool res = nc_admin_poll_buckets(sock, &bucket_props);
-    nc_admin_connection_disconnect(sock);
-    if (res) {
-        if (array_n(&bucket_props) == 0) {
-            nc_admin_print("Nothing found");
-            return NC_ADMIN_OK;
-        }
-        while (array_n(&bucket_props) != 0) {
-            struct bucket_prop *bp = array_pop(&bucket_props);
-            nc_admin_print("%.*s:%.*s", bp->datatype.len, bp->datatype.data,
-                           bp->bucket.len, bp->bucket.data);
-            nc_admin_print("  ttl: %"PRIi64" ms", bp->ttl_ms);
-            //string_deinit(&bp->datatype);
-            //string_deinit(&bp->bucket);
-        }
-        array_deinit(&bucket_props);
+
+    DtFetchResp *bl = nc_admin_connection_list_buckets(sock);
+    if (bl == NULL) {
+        nc_admin_connection_disconnect(sock);
+        return NC_ADMIN_ERROR;
+    }
+    if (bl->value->n_set_value == 0) {
+        nc_admin_connection_disconnect(sock);
+        nc_admin_print("Nothing found");
+        nc_free(bl);
         return NC_ADMIN_OK;
     }
-    return NC_ADMIN_ERROR;
+    for (i = 0; i < bl->value->n_set_value; i++) {
+        uint8_t bucket[bl->value->set_value[i].len + 1];
+        sprintf((char *)bucket, "%.*s", (int)bl->value->set_value[i].len,
+                        bl->value->set_value[i].data);
+        nc_admin_print("%s", bucket);
+        j = 0;
+        while (ALLOWED_PROPERTIES[j][0]) {
+            RpbGetResp *prop;
+            prop = nc_admin_connection_get_bucket_prop(sock, (char *)bucket,
+                                                       ALLOWED_PROPERTIES[j]);
+            if (prop != NULL) {
+                if (prop->n_content > 0) {
+                    if (prop->content[0]->value.len > 0) {
+                        nc_admin_print("  %s: %.*s", ALLOWED_PROPERTIES[j],
+                                       prop->content[0]->value.len,
+                                       prop->content[0]->value.data);
+                    }
+                }
+            }
+            nc_free(prop);
+            j++;
+        }
+    }
+    nc_admin_connection_disconnect(sock);
+    nc_free(bl);
+
+    return NC_ADMIN_OK;
 }
 
 static bool
@@ -246,16 +310,22 @@ nc_admin_check_args(int need, const char *arg1, const char *arg2,
 void
 nc_admin_show_usage(void)
 {
+    uint32_t i = 0;
     nc_admin_print(
         "Usage: nutcracker admin riak_host:port command args" CRLF
         "Available commands and their arguments are:" CRLF
         "    set-bucket-prop bucket property value - set bucket property" CRLF
-        "    get-bucket-prop bucket property - get property value" CRLF
-        "    del-bucket bucket - delete bucket" CRLF
-        "    list-buckets - list existing buckets with properties" CRLF
-        "    list-bucket-props - list allowed properties for buckets" CRLF
+        "    get-bucket-prop bucket property - get bucket property value" CRLF
+        "    del-bucket bucket property - delete bucket property" CRLF
+        "    del-bucket bucket - delete bucket with all properties" CRLF
+        "    list-buckets - list existing buckets" CRLF
+        "    list-bucket-props bucket - list existing properties for bucket" CRLF
         "    list-all - list all buckets with all properties and values" CRLF
-        "");
+        "Available properties are:");
+    while (ALLOWED_PROPERTIES[i][0]) {
+        nc_admin_print("    %s", ALLOWED_PROPERTIES[i]);
+        i++;
+    }
 }
 
 static char *
@@ -299,7 +369,7 @@ nc_admin_command(const char *host, const char *command,
             }
         }
     } else if (strequ(command, "get-bucket-prop")) {
-        if(nc_admin_check_args(2, arg1, arg2, arg3, arg2, NULL)) {//
+        if (nc_admin_check_args(2, arg1, arg2, arg3, arg2, NULL)) {//
             bucket = nc_admin_check_bucket(arg1);
             if (bucket) {
                 res = nc_admin_get_bucket_prop(host, bucket, arg2);
@@ -314,16 +384,28 @@ nc_admin_command(const char *host, const char *command,
                 nc_free(bucket);
             }
         }
+    } else if (strequ(command, "del-bucket-prop")) {
+        if (nc_admin_check_args(2, arg1, arg2, arg3, arg2, NULL)) {
+            bucket = nc_admin_check_bucket(arg1);
+            if (bucket) {
+                res = nc_admin_del_bucket_prop(host, bucket, arg2);
+                nc_free(bucket);
+            }
+        }
     } else if (strequ(command, "list-bucket-props")) {
-        if (nc_admin_check_args(0, arg1, arg2, arg3, NULL, NULL)) {
-            res = nc_admin_list_bucket_props(host);
+        if (nc_admin_check_args(1, arg1, arg2, arg3, NULL, NULL)) {
+            bucket = nc_admin_check_bucket(arg1);
+            if (bucket) {
+                res = nc_admin_list_bucket_props(host, bucket);
+                nc_free(bucket);
+            }
         }
     } else if (strequ(command, "list-buckets")) {
         if (nc_admin_check_args(0, arg1, arg2, arg3, NULL, NULL)) {
             res = nc_admin_list_buckets(host);
         }
     } else if (strequ(command, "list-all")) {
-        if(nc_admin_check_args(0, arg1, arg2, arg3, NULL, NULL)) {
+        if (nc_admin_check_args(0, arg1, arg2, arg3, NULL, NULL)) {
             res = nc_admin_list_all(host);
         }
     } else {

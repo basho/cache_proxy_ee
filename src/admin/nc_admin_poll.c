@@ -70,7 +70,7 @@ nc_admin_poll_bucket_props(int sock, uint8_t *bucket, struct bucket_prop *bp)
         }
         if (prop->n_content == 0) {
             nc_free(prop);
-            return false;
+            continue;
         }
         if (prop->content[0]->value.len == 0) {
             nc_free(prop);
@@ -96,7 +96,7 @@ nc_admin_poll_bucket_props(int sock, uint8_t *bucket, struct bucket_prop *bp)
     return true;
 }
 
-bool
+static bool
 nc_admin_poll_buckets(int sock, struct array *bucket_props)
 {
     uint32_t i;
