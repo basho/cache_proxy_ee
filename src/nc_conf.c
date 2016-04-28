@@ -2123,3 +2123,478 @@ conf_set_backend_type(struct conf *cf, struct command *cmd, void *conf)
 
     return "is not a valid backend type";
 }
+
+static bool
+conf_write_key_value_string(yaml_emitter_t *emitter, const char *key,
+                            const struct string *value)
+{
+    yaml_event_t event;
+    if (value->len == 0 || value->data == NULL) {
+        return true;
+    }
+
+    /* write key */
+    if (!yaml_scalar_event_initialize(&event, NULL, NULL, (yaml_char_t *)key,
+                                      (int)nc_strlen(key), 1, 0,
+                                      YAML_PLAIN_SCALAR_STYLE)) {
+        log_error("conf: failed to init scalar event");
+         return false;
+    }
+    if (!yaml_emitter_emit(emitter, &event)) {
+        log_error("conf: failed to write yaml event");
+        return false;
+    }
+    /* write value */
+    if (!yaml_scalar_event_initialize(&event, NULL, NULL, value->data,
+                                      (int)value->len, 1, 0,
+                                      YAML_PLAIN_SCALAR_STYLE)) {
+        log_error("conf: failed to init scalar event");
+         return false;
+    }
+    if (!yaml_emitter_emit(emitter, &event)) {
+        log_error("conf: failed to write yaml event");
+        return false;
+    }
+
+    return true;
+}
+
+static bool
+conf_write_key_value_int(yaml_emitter_t *emitter, const char *key, int value)
+{
+    uint8_t intbuf[16];
+    if (value == CONF_UNSET_NUM) {
+        return true;
+    }
+    const uint32_t len = (uint32_t)sprintf((char *)intbuf, "%i", value);
+    struct string str = {len, intbuf};
+    return conf_write_key_value_string(emitter, key, &str);
+}
+
+static bool
+conf_write_key_value_bool(yaml_emitter_t *emitter, const char *key, bool value)
+{
+    const static struct string truestr = string("true");
+    const static struct string falsestr = string("false");
+    const struct string *b = value ? &truestr : &falsestr;
+    return conf_write_key_value_string(emitter, key, b);
+}
+
+static bool
+conf_write_key_value_time(yaml_emitter_t *emitter, const char *key,
+                          int64_t time)
+{
+    struct string str;
+    if (!nc_ttl_value_to_string(&str, time)) {
+        return false;
+    }
+    bool res = conf_write_key_value_string(emitter, key, &str);
+    string_deinit(&str);
+    return res;
+}
+
+static bool
+conf_write_buckets_props(yaml_emitter_t *emitter, const char *name,
+                         struct array *bpa)
+{
+    uint32_t i;
+    bool res = true;
+    yaml_event_t event;
+    if (array_n(bpa) == 0) {
+        return true;
+    }
+    /* write name */
+    if (!yaml_scalar_event_initialize(&event, NULL, NULL, (yaml_char_t *)name,
+                                      (int)nc_strlen(name), 1, 0,
+                                      YAML_PLAIN_SCALAR_STYLE)) {
+        log_error("conf: failed to init scalar event");
+        return false;
+    }
+    if (!yaml_emitter_emit(emitter, &event)) {
+        log_error("conf: failed to write yaml event");
+        return false;
+    }
+    /* write list */
+    if (!yaml_sequence_start_event_initialize(&event, NULL, NULL, 1,
+                                              YAML_BLOCK_SEQUENCE_STYLE)) {
+        log_error("conf: failed to initialize yaml sequence");
+        return false;
+    }
+    if (!yaml_emitter_emit(emitter, &event)) {
+        log_error("conf: failed to write yaml event");
+        return false;
+    }
+    for (i = 0; i < array_n(bpa); i++) {
+        struct bucket_prop *bp = array_get(bpa, i);
+        char bucketname[bp->datatype.len + bp->bucket.len + 2];
+        int len = sprintf(bucketname, "%.*s:%.*s", bp->datatype.len,
+                          bp->datatype.data, bp->bucket.len,
+                          bp->bucket.data);
+        /* start bucket properties list */
+        if (!yaml_mapping_start_event_initialize(&event, NULL, NULL, 1,
+                                                 YAML_BLOCK_MAPPING_STYLE)) {
+            log_error("conf: failed to initialize yaml mapping");
+            res = false;
+            break;
+        }
+        if (!yaml_emitter_emit(emitter, &event)) {
+            log_error("conf: failed to write yaml event");
+            res = false;
+            break;
+        }
+
+        /* write bucket name */
+        if (!yaml_scalar_event_initialize(&event, NULL, NULL,
+                                          (yaml_char_t *)bucketname, len,
+                                          1, 0, YAML_PLAIN_SCALAR_STYLE)) {
+            log_error("conf: failed to init scalar event");
+            res = false;
+            break;
+        }
+        if (!yaml_emitter_emit(emitter, &event)) {
+            log_error("conf: failed to write yaml event");
+            res = false;
+            break;
+        }
+        /* empty value for bucket name */
+        if (!yaml_scalar_event_initialize(&event, NULL, NULL,
+                                          (yaml_char_t *)"", 0,
+                                          1, 0, YAML_PLAIN_SCALAR_STYLE)) {
+            log_error("conf: failed to init scalar event");
+            res = false;
+            break;
+        }
+        if (!yaml_emitter_emit(emitter, &event)) {
+            log_error("conf: failed to write yaml event");
+            res = false;
+            break;
+        }
+
+        /* write each bucket props */
+        conf_write_key_value_time(emitter, "ttl", bp->ttl_ms);
+
+        /* close bucket properties list */
+        if (!yaml_mapping_end_event_initialize(&event)) {
+            log_error("conf: failed to end yaml mapping");
+            res = false;
+            break;
+        }
+        if (!yaml_emitter_emit(emitter, &event)) {
+            log_error("conf: failed to write yaml event");
+            res = false;
+            break;
+        }
+    }
+    /* close list */
+    if (!yaml_sequence_end_event_initialize(&event)) {
+        log_error("conf: failed to end yaml sequence");
+        return false;
+    }
+    if (!yaml_emitter_emit(emitter, &event)) {
+        log_error("conf: failed to write yaml event");
+        return false;
+    }
+    return res;
+}
+
+static bool
+conf_write_servers(yaml_emitter_t *emitter, const char *name,
+                   struct servers *servers)
+{
+    uint32_t i;
+    bool res = true;
+    yaml_event_t event;
+    if (array_n(&servers->server_arr) == 0) {
+        return true;
+    }
+    /* write name */
+    if (!yaml_scalar_event_initialize(&event, NULL, NULL, (yaml_char_t *)name,
+                                      (int)nc_strlen(name), 1, 0,
+                                      YAML_PLAIN_SCALAR_STYLE)) {
+        log_error("conf: failed to init scalar event");
+        return false;
+    }
+    if (!yaml_emitter_emit(emitter, &event)) {
+        log_error("conf: failed to write yaml event");
+        return false;
+    }
+    /* write list */
+    if (!yaml_sequence_start_event_initialize(&event, NULL, NULL, 1,
+                                              YAML_BLOCK_SEQUENCE_STYLE)) {
+        log_error("conf: failed to initialize yaml sequence");
+        return false;
+    }
+    if (!yaml_emitter_emit(emitter, &event)) {
+        log_error("conf: failed to write yaml event");
+        return false;
+    }
+
+    for (i = 0; i < array_n(&servers->server_arr); i++) {
+        struct server *server = array_get(&servers->server_arr, i);
+        if (!yaml_scalar_event_initialize(&event, NULL, NULL,
+                                          (yaml_char_t *)server->pname.data,
+                                          (int)server->pname.len, 1, 0,
+                                          YAML_PLAIN_SCALAR_STYLE)) {
+            log_error("conf: failed to init scalar event");
+            res = false;
+            break;
+        }
+        if (!yaml_emitter_emit(emitter, &event)) {
+            log_error("conf: failed to write yaml event");
+            res = false;
+            break;
+        }
+    }
+    /* close list */
+    if (!yaml_sequence_end_event_initialize(&event)) {
+        log_error("conf: failed to end yaml sequence");
+        return false;
+    }
+    if (!yaml_emitter_emit(emitter, &event)) {
+        log_error("conf: failed to write yaml event");
+        return false;
+    }
+    return res;
+}
+
+static bool
+conf_write_pool(yaml_emitter_t *emitter, struct server_pool *pool)
+{
+    bool res;
+    yaml_event_t event;
+
+    /* write pool name */
+    if (!yaml_scalar_event_initialize(&event, NULL, NULL, pool->name.data,
+                                      (int)pool->name.len, 1, 0,
+                                      YAML_PLAIN_SCALAR_STYLE)) {
+        log_error("conf: failed to init scalar event");
+         return false;
+    }
+    if (!yaml_emitter_emit(emitter, &event)) {
+        log_error("conf: failed to write yaml event");
+        return false;
+    }
+    if (!yaml_mapping_start_event_initialize(&event, NULL, NULL, 1,
+                                             YAML_BLOCK_MAPPING_STYLE)) {
+        log_error("conf: failed to initialize yaml mapping");
+        return false;
+    }
+    if (!yaml_emitter_emit(emitter, &event)) {
+        log_error("conf: failed to write yaml event");
+        return false;
+    }
+
+    /* write pool properties */
+    res = conf_write_key_value_string(emitter, "listen", &pool->addrstr);
+    if(res) {
+       if (pool->key_hash_type != (int)CONF_UNSET_HASH) {
+           res = conf_write_key_value_string(emitter, "hash",
+                                           &hash_strings[pool->key_hash_type]);
+       }
+    }
+    if(res) {
+        res = conf_write_key_value_string(emitter, "hash_tag",
+                                          &pool->hash_tag);
+    }
+    if(res) {
+        if (pool->dist_type != (int)CONF_UNSET_DIST) {
+            res = conf_write_key_value_string(emitter, "distribution",
+                                              &dist_strings[pool->dist_type]);
+        }
+    }
+    if(res) {
+        res = conf_write_key_value_int(emitter, "timeout", pool->timeout);
+    }
+    if(res) {
+       res = conf_write_key_value_int(emitter, "backlog", pool->backlog);
+    }
+    if(res) {
+       res = conf_write_key_value_int(emitter, "client_connections",
+                                      (int)pool->client_connections);
+    }
+    if(res) {
+       res = conf_write_key_value_bool(emitter, "redis", pool->redis);
+    }
+    if(res) {
+        res = conf_write_key_value_string(emitter, "redis_auth",
+                                          &pool->redis_auth);
+    }
+    if(res) {
+        res = conf_write_key_value_int(emitter, "redis_db", pool->redis_db);
+    }
+    if(res) {
+       res = conf_write_key_value_bool(emitter, "preconnect",
+                                       pool->preconnect);
+    }
+    if(res) {
+       res = conf_write_key_value_bool(emitter, "auto_eject_hosts",
+                                       pool->auto_eject_hosts);
+    }
+    if(res) {
+        res = conf_write_key_value_int(emitter, "server_connections",
+                                       (int)pool->server_connections);
+    }
+    if(res) {
+        res = conf_write_key_value_int(emitter, "server_retry_timeout",
+                                       (int)pool->server_retry_timeout / 1000);
+    }
+    if(res) {
+        res = conf_write_key_value_int(emitter, "server_failure_limit",
+                                       (int)pool->server_failure_limit);
+    }
+    if(res) {
+        res = conf_write_key_value_time(emitter, "server_ttl",
+                                        pool->server_ttl_ms);
+    }
+    if(res) {
+        res = conf_write_buckets_props(emitter, "buckets",
+                                       &pool->backend_opt.bucket_prop);
+    }
+    if(res) {
+        res = conf_write_servers(emitter, "servers", &pool->frontends);
+    }
+    if(res) {
+        res = conf_write_servers(emitter, "backends", &pool->backends);
+    }
+
+    if(res) {
+        if (pool->backend_opt.type != CONN_UNKNOWN) {
+            res = conf_write_key_value_string(emitter, "backend_type",
+                                  &connection_strings[pool->backend_opt.type]);
+        }
+    }
+    if(res) {
+        res = conf_write_key_value_int(emitter, "backend_max_resend",
+                                       pool->backend_opt.max_resend);
+    }
+    if(res) {
+        res = conf_write_key_value_int(emitter, "backend_riak_r",
+                                       pool->backend_opt.riak_r);
+    }
+    if(res) {
+        res = conf_write_key_value_int(emitter, "backend_riak_pr",
+                                       pool->backend_opt.riak_pr);
+    }
+    if(res) {
+        res = conf_write_key_value_int(emitter, "backend_riak_w",
+                                       pool->backend_opt.riak_w);
+    }
+    if(res) {
+        res = conf_write_key_value_int(emitter, "backend_riak_pw",
+                                       pool->backend_opt.riak_pw);
+    }
+    if(res) {
+        res = conf_write_key_value_int(emitter, "backend_riak_n",
+                                       pool->backend_opt.riak_n);
+    }
+    if(res) {
+        res = conf_write_key_value_int(emitter, "backend_riak_timeout",
+                                       pool->backend_opt.riak_timeout);
+    }
+    if(res) {
+        res = conf_write_key_value_int(emitter, "backend_riak_basic_quorum",
+                                       pool->backend_opt.riak_basic_quorum);
+    }
+    if(res) {
+        res = conf_write_key_value_int(emitter, "backend_riak_sloppy_quorum",
+                                       pool->backend_opt.riak_sloppy_quorum);
+    }
+    if(res) {
+        res = conf_write_key_value_int(emitter, "backend_riak_notfound_ok",
+                                       pool->backend_opt.riak_notfound_ok);
+    }
+    if(res) {
+        res = conf_write_key_value_int(emitter, "backend_riak_deletedvclock",
+                                       pool->backend_opt.riak_deletedvclock);
+    }
+
+    /* close pool record */
+    if (!yaml_mapping_end_event_initialize(&event)) {
+        log_error("conf: failed to end yaml mapping");
+        return false;
+    }
+    if (!yaml_emitter_emit(emitter, &event)) {
+        log_error("conf: failed to write yaml event");
+        return false;
+    }
+    return res;
+}
+
+bool
+conf_save_to_file(const char *filename, struct array *pools)
+{
+    FILE *fh;
+    uint32_t i;
+    yaml_emitter_t emitter;
+    yaml_event_t event;
+    bool res;
+
+    /* init yaml writter */
+    if (!yaml_emitter_initialize(&emitter)) {
+        log_error("conf: failed to initialize yaml emitter");
+        return false;
+    }
+    fh = fopen(filename, "w");
+    if (fh == NULL) {
+        log_error("conf: failed to write configuration");
+        return false;
+    }
+    yaml_emitter_set_output_file(&emitter, fh);
+    res = false;
+    if (!yaml_stream_start_event_initialize(&event, YAML_UTF8_ENCODING)) {
+        log_error("conf: failed to init yaml stream");
+    } else if (!yaml_emitter_emit(&emitter, &event)) {
+        log_error("conf: failed to write yaml event");
+    } else if (!yaml_document_start_event_initialize(&event, NULL, NULL,
+                                                     NULL, 1)) {
+        log_error("conf: failed to init yaml document");
+    } else if (!yaml_emitter_emit(&emitter, &event)) {
+        log_error("conf: failed to write yaml event");
+    } else if (!yaml_mapping_start_event_initialize(&event, NULL, NULL, 1,
+                                              YAML_BLOCK_MAPPING_STYLE)) {
+       log_error("conf: failed to init yaml mapping");
+    } else if (!yaml_emitter_emit(&emitter, &event)) {
+       log_error("conf: failed to write yaml event");
+    } else {
+        res = true;
+    }
+    if (!res) {
+        yaml_emitter_delete(&emitter);
+        fclose(fh);
+        return false;
+    }
+
+    /* store each pool */
+    for (i = 0; i < array_n(pools); i++) {
+        struct server_pool *pool = array_get(pools, i);
+        if (!conf_write_pool(&emitter, pool)) {
+            yaml_emitter_flush(&emitter);
+            yaml_emitter_delete(&emitter);
+            fclose(fh);
+            return false;
+        }
+    }
+
+    /* deinit yaml writter */
+    res = false;
+    if (!yaml_mapping_end_event_initialize(&event)) {
+        log_error("conf: failed to end yaml mapping");
+    } else if (!yaml_emitter_emit(&emitter, &event)) {
+        log_error("conf: failed to write yaml event");
+    } else if (!yaml_document_end_event_initialize(&event, 1)) {
+        log_error("conf: failed to end yaml document");
+    } else if (!yaml_emitter_emit(&emitter, &event)) {
+        log_error("conf: failed to write yaml event");
+    } else if (!yaml_stream_end_event_initialize(&event)) {
+        log_error("conf: failed to end yaml stream");
+    } else if (!yaml_emitter_emit(&emitter, &event)) {
+        log_error("conf: failed to write yaml event");
+    } else if (!yaml_emitter_flush(&emitter)) {
+        log_error("conf: failed to flush yaml");
+    } else {
+        res = true;
+    }
+    yaml_emitter_delete(&emitter);
+    fclose(fh);
+    return res;
+}

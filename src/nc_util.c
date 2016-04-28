@@ -755,7 +755,7 @@ nc_read_ttl_value(struct string *value, int64_t *np)
     }
     unitstr[unit_len] = '\0';
 
-    struct unit* unitptr=0;
+    struct unit* unitptr = 0;
     for (unitptr = units; strlen(unitptr->name) != 0; unitptr++) {
         if (strlen(unitptr->name) == strlen(unitstr)) {
             if (strcasecmp(unitptr->name, unitstr) == 0) {
@@ -765,6 +765,35 @@ nc_read_ttl_value(struct string *value, int64_t *np)
         }
     }
 
+    return false;
+}
+
+bool
+nc_ttl_value_to_string(struct string *str, int64_t ttl)
+{
+    uint8_t intbuf[64];
+    uint32_t len;
+    uint32_t i = 0;
+    bool found = false;
+    while(*units[i + 1].name) {
+        i++;
+    }
+    for (; i >=0; i--) {
+        if (ttl % (int64_t)units[i].toms == 0) {
+            len = (uint32_t)sprintf((char *)intbuf, "%"PRIi64"%s",
+                                    (ttl / (int64_t)units[i].toms),
+                                    units[i].name);
+            found = true;
+            break;
+        }
+    }
+    if (found) {
+        str->data = nc_strndup(intbuf, len);
+        if (str->data) {
+            str->len = len;
+            return true;
+        }
+    }
     return false;
 }
 

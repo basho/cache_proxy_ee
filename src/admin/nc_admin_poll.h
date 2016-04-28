@@ -7,6 +7,6 @@
 
 void nc_admin_poll_start(struct context *ctx);
 void nc_admin_poll_stop(void);
-void nc_admin_poll_sync(void);
+bool nc_admin_poll_sync(void);
 
 #endif /* _NC_ADMIN_POLL_H_ */

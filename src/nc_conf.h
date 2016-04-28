@@ -161,4 +161,6 @@ rstatus_t conf_pool_each_transform(void *elem, void *data);
 struct conf *conf_create(char *filename);
 void conf_destroy(struct conf *cf);
 
+bool conf_save_to_file(const char *filename, struct array *pools);
+
 #endif

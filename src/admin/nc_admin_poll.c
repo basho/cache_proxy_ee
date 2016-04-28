@@ -244,9 +244,10 @@ nc_admin_poll_stop(void)
     array_deinit(&update_items);
 }
 
-void
+bool
 nc_admin_poll_sync(void)
 {
+    bool found = false;
     while (array_n(&update_items) != 0) {
         pthread_mutex_lock(&array_mutex);
         struct update_item *item = array_pop(&update_items);
@@ -256,5 +257,7 @@ nc_admin_poll_sync(void)
         log_debug(LOG_DEBUG, "Update %d buckets props in pool '%.*s'",
                   array_n(&item->bucket_props), item->pool->name.len,
                   item->pool->name.data);
+        found = true;
     }
+    return found;
 }

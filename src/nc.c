@@ -529,7 +529,6 @@ nc_run(struct instance *nci)
     if (ctx == NULL) {
         return;
     }
-
     /* run poll service */
     nc_admin_poll_start(ctx);
 
@@ -539,7 +538,11 @@ nc_run(struct instance *nci)
         if (status != NC_OK) {
             break;
         }
-        nc_admin_poll_sync();
+        if (nc_admin_poll_sync()) {
+            if (nci->conf_filename) {
+                conf_save_to_file(nci->conf_filename, &ctx->pool);
+            }
+        }
     }
 
     core_stop(ctx);
