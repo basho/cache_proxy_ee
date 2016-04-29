@@ -290,7 +290,8 @@ nc_admin_check_args(int need, const char *arg1, const char *arg2,
                 if (nc_c_strequ(prop, "ttl")) {
                     struct string str = {nc_strlen(value), (uint8_t *)value};
                     if (!nc_read_ttl_value(&str, &ttl)) {
-                        nc_admin_print("Wrong ttl value");
+                        nc_admin_print("Invalid ttl value, specify quantity "
+                                       "and units, ie '15s' for 15 seconds");
                         return false;
                     }
                 }
