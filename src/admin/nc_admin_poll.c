@@ -113,6 +113,11 @@ nc_admin_poll_buckets(int sock, struct array *bucket_props,
     if (bl == NULL) {
         return false;
     }
+    if (bl->value == NULL) {
+        array_null(bucket_props);
+        nc_free(bl);
+        return true;
+    }
     if (bl->value->n_set_value == 0) {
         array_null(bucket_props);
         nc_free(bl);

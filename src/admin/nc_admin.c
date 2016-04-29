@@ -214,7 +214,11 @@ nc_admin_list_all(const char *host)
         nc_admin_connection_disconnect(sock);
         return NC_ADMIN_ERROR;
     }
-    if (bl->value->n_set_value == 0) {
+    bool nf = (bl->value == 0);
+    if (!nf) {
+        nf = (bl->value->n_set_value == 0);
+    }
+    if (nf) {
         nc_admin_connection_disconnect(sock);
         nc_admin_print("Nothing found");
         nc_free(bl);
