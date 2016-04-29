@@ -45,16 +45,38 @@ struct array update_items;
 static void
 get_abs_time(struct timespec *abs_time)
 {
-#ifdef __MACH__ // OS X doesn't implement clock_gettime,
-  clock_serv_t clock_srv;
-  mach_timespec_t m_abs_time;
-  host_get_clock_service(mach_host_self(), CALENDAR_CLOCK, &clock_srv);
-  clock_get_time(clock_srv, &m_abs_time);
-  mach_port_deallocate(mach_task_self(), clock_srv);
-  abs_time->tv_sec = m_abs_time.tv_sec;
-  abs_time->tv_nsec = m_abs_time.tv_nsec;
+#ifdef __MACH__ // OS X doesn't implement clock_gettime
+    clock_serv_t clock_srv;
+    mach_timespec_t m_abs_time;
+    host_get_clock_service(mach_host_self(), CALENDAR_CLOCK, &clock_srv);
+    clock_get_time(clock_srv, &m_abs_time);
+    mach_port_deallocate(mach_task_self(), clock_srv);
+    abs_time->tv_sec = m_abs_time.tv_sec;
+    abs_time->tv_nsec = m_abs_time.tv_nsec;
 #else
-  clock_gettime(CLOCK_REALTIME, abs_time);
+    clock_gettime(CLOCK_REALTIME, abs_time);
+#endif
+}
+
+static int
+thread_mutex_timedlock(pthread_mutex_t *mutex, const struct timespec *timeout)
+{
+#ifdef __MACH__ // OS X doesn't implement pthread_mutex_timedlock
+    int res;
+    struct  timespec ts;
+    struct  timespec now;
+    ts.tv_sec = 0;
+    ts.tv_nsec = 10000000;
+    while ((res = pthread_mutex_trylock (mutex)) == EBUSY) {
+        get_abs_time(&now);
+        if (now.tv_sec >= timeout->tv_sec && now.tv_nsec >= timeout->tv_nsec) {
+            return ETIMEDOUT;
+        }
+        nanosleep(&ts, NULL);
+    }
+    return res;
+#else
+    return pthread_mutex_timedlock(mutex, timeout);
 #endif
 }
 
@@ -158,7 +180,7 @@ nc_admin_poll_loop(void *arg)
         /* sleep for POLL_TIMEOUT_SEC or exit when mutex is unlocked */
         get_abs_time(&abs_time);
         abs_time.tv_sec += POLL_TIMEOUT_SEC;
-        if (pthread_mutex_timedlock(&poll_mutex, &abs_time) == 0) {
+        if (thread_mutex_timedlock(&poll_mutex, &abs_time) == 0) {
             pthread_mutex_unlock(&poll_mutex);
             break;
         }
