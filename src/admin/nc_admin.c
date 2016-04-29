@@ -117,14 +117,14 @@ nc_admin_del_bucket_prop(const char *host, const char *bucket, const char *prop)
 }
 
 static int
-nc_admin_del_bucket(const char *host, const char *bucket)
+nc_admin_del_bucket_props(const char *host, const char *bucket)
 {
     int sock = nc_admin_connection_resolve_connect(host);
     if (sock == INVALID_SOCKET) {
         nc_admin_print("Error while connecting to riak");
         return NC_ADMIN_ERROR;
     }
-    bool res = nc_admin_connection_del_bucket(sock, bucket);
+    bool res = nc_admin_connection_del_bucket_props(sock, bucket);
     nc_admin_connection_disconnect(sock);
     if (res) {
         nc_admin_print("OK");
@@ -312,8 +312,8 @@ nc_admin_show_usage(void)
         "Available commands and their arguments are:" CRLF
         "    set-bucket-prop bucket property value - set bucket property" CRLF
         "    get-bucket-prop bucket property - get bucket property value" CRLF
-        "    del-bucket bucket property - delete bucket property" CRLF
-        "    del-bucket bucket - delete bucket with all properties" CRLF
+        "    del-bucket-prop bucket property - delete bucket property" CRLF
+        "    del-bucket-props bucket - delete bucket with all properties" CRLF
         "    list-buckets - list existing buckets" CRLF
         "    list-bucket-props bucket - list existing properties for bucket" CRLF
         "    list-all - list all buckets with all properties and values" CRLF
@@ -372,11 +372,11 @@ nc_admin_command(const char *host, const char *command,
                 nc_free(bucket);
             }
         }
-    } else if (nc_c_strequ(command, "del-bucket")) {
+    } else if (nc_c_strequ(command, "del-bucket-props")) {
         if (nc_admin_check_args(1, arg1, arg2, arg3, NULL, NULL)) {
             bucket = nc_admin_check_bucket(arg1);
             if (bucket) {
-                res = nc_admin_del_bucket(host, bucket);
+                res = nc_admin_del_bucket_props(host, bucket);
                 nc_free(bucket);
             }
         }

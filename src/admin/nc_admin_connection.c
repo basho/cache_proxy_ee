@@ -334,7 +334,7 @@ nc_admin_connection_del_bucket_prop(int sock, const char *bucket,
 }
 
 bool
-nc_admin_connection_del_bucket(int sock, const char *bucket)
+nc_admin_connection_del_bucket_props(int sock, const char *bucket)
 {
     uint32_t i = 0;
     while (ALLOWED_PROPERTIES[i][0]) {
