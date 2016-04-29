@@ -152,3 +152,5 @@ $cluster_name:
 
         self.reload()
 
+    def admin(self, riak, line):
+        return os.system(TT('$BINS admin %s %s > /dev/null' % (riak, line), self.args))

@@ -94,3 +94,31 @@ def test_nc_stat():
     for k, v in bkv.items():
         nutcracker.get(k)
     assert_stat(tets_len, tets_len)
+
+def test_bucket_prop_ttl():
+    (_, _, nutcracker, redis) = getconn()
+    riak_node = 'localhost:%d' % riak_cluster.port()
+    buckets_ttl = [['bucket1', 2], ['bucket2', 4],
+                   ['bucket3', 8], ['bucket4', 10]]
+    value = 'data'
+    max_ttl = 0
+    for bt in buckets_ttl:
+        assert_equal(nc.admin(riak_node, 'set-bucket-prop default:%s ttl %ds' % (bt[0], bt[1])), 0)
+        if bt[1] > max_ttl:
+            max_ttl = bt[1]
+
+    time.sleep(20) # sleep until centralized config is synced
+    for bt in buckets_ttl:
+        key = '%s:key' % bt[0]
+        nutcracker.set(key, value)
+        nutcracker.get(key)
+    start_time = time.time()
+
+    while (time.time() - start_time) <  (max_ttl + 2):
+        for bt in buckets_ttl:
+            key = '%s:key' % bt[0]
+            if bt[1] < (time.time() - start_time):
+                assert_equal(redis.get(key), None)
+            else:
+                assert_equal(redis.get(key), value)
+        time.sleep(3)

@@ -197,11 +197,18 @@ class RiakCluster:
     def _ensure_dt_bucket_type(self, bucket_type_name, datatype):
         node_name = self.node_names()[0]
         self.__alive() or self.start()
-        bucket_type_options = { \
-            'devrel_path': self._devrel_path(node_name) \
-            ,'bucket_type': bucket_type_name \
-            ,'bucket_type_props': '{"props":{"datatype":"' + datatype + '"}}' \
-        }
+        if len(datatype) > 0:
+            bucket_type_options = { \
+                'devrel_path': self._devrel_path(node_name) \
+                ,'bucket_type': bucket_type_name \
+                ,'bucket_type_props': '{"props":{"datatype":"' + datatype + '"}}' \
+            }
+        else:
+            bucket_type_options = { \
+                'devrel_path': self._devrel_path(node_name) \
+                ,'bucket_type': bucket_type_name \
+                ,'bucket_type_props': '' \
+            }
 
         if 0 == self._run(TT('$devrel_path/bin/riak-admin bucket-type status $bucket_type', \
                 bucket_type_options)):
@@ -219,3 +226,6 @@ class RiakCluster:
         # TODO: set bucket-type name should be arbitrary, but it is hardcoded
         # in cache proxy. we may be okay with that, but follow up
         self._ensure_dt_bucket_type('sets', 'set')
+        self._ensure_dt_bucket_type('rra', '')
+        self._ensure_dt_bucket_type('rra_set', 'set')
+        self._ensure_dt_bucket_type('rra_counter ', 'counter')
