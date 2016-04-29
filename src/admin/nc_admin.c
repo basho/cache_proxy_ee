@@ -333,7 +333,7 @@ nc_admin_check_bucket(const char *str)
     uint32_t str_len = nc_strlen(str);
     if (nc_parse_datatype_bucket((uint8_t *)str, str_len, &datatype, &bucket)) {
         if (str_len == bucket.len) {
-            nc_admin_print("Use '%.*s' datatype for bucket '%.*s'",
+            nc_admin_print("Using '%.*s' datatype for bucket '%.*s'",
                            datatype.len, datatype.data,
                            bucket.len, bucket.data);
         }
