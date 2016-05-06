@@ -1,5 +1,7 @@
 #!/bin/sh
-TMP_BASE=/tmp/r/riak_devrel_
+DIR=$(dirname $0)
+source $DIR/include_common.sh
+
 usage () {
     echo "Usage: $0 COMMAND NODE_NAME1 NODE_NAME2 .. NODE_NAMEn"
     echo "Commands:"
@@ -7,63 +9,40 @@ usage () {
     echo "stop  - stop all nodes"
     echo "ping  - ping all nodes"
 }
-riak_command () {
-    RIAK_COMMAND=$1
-    NODE=$2
-    $TMP_BASE$NODE/bin/riak $RIAK_COMMAND
-    RET=$?
-    return $RET
-}
-redirect_command () {
-    if [ "$SILENT" != "0" ]; then
-        "$@" >/dev/null 2>&1
-    else
-        "$@"
-    fi
-}
-riak_start_postwait () {
-    NODE=$1
-    echo 'perforning riak-admin test following start'
-    RET=1
-    CNT=0
-    while [ "$RET" != "0" ]; do
-        CNT=$((CNT+1))
-        if [ $CNT -gt 60 ]; then
-            return 1
-        fi
-        redirect_command riak_command ping $NODE
-        if [ "$?" != "0" ]; then
-            redirect_command riak_command start $NODE
-        fi
-        $TMP_BASE$NODE/bin/riak-admin test
-        RET=$?
-        if [ "$RET" != "0" ]; then
-            sleep 1
-        fi
-    done
-    return $RET
-}
+
 RIAK_COMMAND=$1
 shift
 NODE_NAMES=$@
-if [ -z SILENT ]; then
-    SILENT=1
-fi
+
 if [ "$NODE_NAMES" = "" ]; then
     usage && exit 1
 fi
 for node_name in $NODE_NAMES; do
-    redirect_command riak_command $RIAK_COMMAND $node_name
-    RET=$?
+    case $RIAK_COMMAND in
+        start)
+            retry_cmd 5 riak_start $node_name
+            RET=$?
+            ;;
+        stop)
+            retry_cmd 5 riak_stop $node_name
+            RET=$?
+            ;;
+        ping)
+            retry_cmd 5 riak_ping $node_name
+            RET=$?
+            ;;
+    esac
 done
-if [ "$RIAK_COMMAND" = "start" ]; then
-    for node_name in $NODE_NAMES; do
-        #riak_start_postwait $node_name >/dev/null 2>&1
-        redirect_command riak_start_postwait $node_name
-        RET=$?
-        if [ "$RET" = "1" ]; then
-            break
-        fi
-    done
-fi
+for node_name in $NODE_NAMES; do
+    case $RIAK_COMMAND in
+        start)
+            retry_cmd 5 riak_start_postwait $node_name
+            RET=$?
+            ;;
+        stop)
+            riak_kill_stragglers $node_name
+            RET=$?
+            ;;
+    esac
+done
 exit "$RET"

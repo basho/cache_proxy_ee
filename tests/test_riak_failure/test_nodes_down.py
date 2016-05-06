@@ -51,10 +51,10 @@ def _create_delete_run(key_count, riak_client, riak_bucket, nutcracker, redis):
     assert_equal(0, failed_to_delete)
 
 def _create_delete(key_count, redis_to_shutdown, riak_to_shutdown):
-    (riak_client, riak_bucket, nutcracker, redis) = getconn()
-    shutdown_redis_nodes(redis_to_shutdown)
-    shutdown_riak_nodes(riak_to_shutdown)
+    (riak_client, riak_bucket, nutcracker, redis) = getconn(testing_type='partition')
     try:
+        shutdown_redis_nodes(redis_to_shutdown)
+        shutdown_riak_nodes(riak_to_shutdown)
         _create_delete_run(key_count, riak_client, riak_bucket, nutcracker, redis)
     except:
         raise
