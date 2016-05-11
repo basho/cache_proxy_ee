@@ -1,10 +1,4 @@
 #!/bin/sh
-T_MAX_RUNTIME=#{T_MAX_RUNTIME:-1800} #<< 30 minutes
-ptimeout () {
-    # OSX lack of timeout, so use ubiquitous perl
-    perl -e 'alarm shift; exec @ARGV' "$@";
-}
-
 if [ -z "$T_VERBOSE" ]; then
     verbose=""
 else
@@ -43,4 +37,4 @@ for target_dir in test_riak_failure; do
     ln test_riak/riak_common.py $target_dir/riak_common.py
 done
 
-ptimeout $T_MAX_RUNTIME exec nosetests "${verbose}" "${timer}" -a \!acceptance,\!slow "$@"
+nosetests "${verbose}" "${timer}" -a \!acceptance,\!slow "$@"
