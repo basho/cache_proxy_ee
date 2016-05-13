@@ -674,6 +674,10 @@ req_forward(struct context *ctx, struct conn *c_conn, struct msg *msg, bool back
         backend = 0;
         server = NULL;
         s_conn = server_pool_conn_frontend(ctx, pool, key, keylen, server);
+        break;
+
+    case NC_EAGAIN:
+        return;
     }
 
     if (!msg->noreply && enqueue) {
@@ -800,6 +804,10 @@ req_recv_done(struct context *ctx, struct conn *conn, struct msg *msg,
 
         TAILQ_REMOVE(&frag_msgq, sub_msg, m_tqe);
         req_forward(ctx, conn, sub_msg, backend, enqueue);
+        if (sub_msg->error != NC_OK) {
+            msg->error = sub_msg->error;
+            break;
+        }
     }
 
     ASSERT(TAILQ_EMPTY(&frag_msgq));
