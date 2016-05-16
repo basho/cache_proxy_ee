@@ -1,6 +1,6 @@
 #!/bin/sh
 DIR=$(dirname $0)
-source $DIR/include_common.sh
+. "$DIR/include_common.sh"
 
 usage () {
     echo "Usage: $0 NODE_NAME1 NODE_NAME2 .. NODE_NAMEn"

@@ -1,3 +1,4 @@
+#!/bin/sh
 DIR=$(dirname $0)
 TMP_BASE=/tmp/r/riak_devrel_
 
@@ -11,7 +12,7 @@ retry_cmd () {
     }
     while [ $retries -gt 0 ]; do
         $cmd && break || {
-        let retries-=1
+        retries=$(($retries-1))
         sleep $retry_delay
         }
     done
@@ -165,7 +166,7 @@ riak_cluster_grep_predicate_all_nodes () {
     for node in $nodes; do
         local grep_predicate=$(echo $grep_predicate_pattern |sed -e "s/\<node\>/${node}/g")
         if echo "$rcs" |grep $grep_predicate >/dev/null 2>&1; then
-            let unmatched_nodes+=1
+            unmatched_nodes=$(($unmatched_nodes+1))
         fi
     done
     return $unmatched_nodes
@@ -205,7 +206,7 @@ riak_ring_ready () {
     local not_in_ring=0
     for node in $nodes; do
         if ! echo "$ring_ready_result" |grep $node >/dev/null 2>&1; then
-            let not_in_ring+=1
+            not_in_ring=$(($not_in_ring+1))
         fi
     done
     return $not_in_ring
