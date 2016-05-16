@@ -66,8 +66,12 @@ variables
 =========
 ::
 
+    export T_TIMER=on will run the nostests with nose-timer, adding timing to
+        test output (default:off)
+    export T_TIMER_TOP_N=10 will run the nosetests with nose-timer, showing only
+        the top N slowest tests (default:None, show all)
     export T_VERBOSE=9 will start nutcracker with '-v 9'  (default:4)
-    export T_MBUF=512  will start nutcracker whit '-m 512' (default:521)
+    export T_MBUF=512  will start nutcracker with '-m 512' (default:521)
     export T_LARGE=10000 will test 10000 keys for mget/mset (default:1000)
     export T_RETRY_TIMES=5 will retry reads and writes (default:5)
     export T_RETRY_DELAY=0.1 will delay 0.1 seconds between retries (default:0.1)
@@ -98,3 +102,8 @@ notes
   which will send SEGV to nutcracker. Automatically removing coredump files is
   not performed.
 
+- test_riak/riak_common.py is shared between test_riak and test_riak_failure
+  via a hard link. To reduce the likelihood of drift between the files, the
+  following precautions are taken:
+    - .gitignore in tests ignores the target file
+    - nosetests.sh creates the hard link afresh
