@@ -771,30 +771,28 @@ nc_read_ttl_value(struct string *value, int64_t *np)
 bool
 nc_ttl_value_to_string(struct string *str, int64_t ttl)
 {
-    uint8_t intbuf[64];
-    uint32_t len;
-    uint32_t i = 0;
-    bool found = false;
-    while(*units[i + 1].name) {
-        i++;
+    /* units are stored from smallest to largest.
+     * find the largest unit that is cleanly divisible.
+     * do NOT include the terminator.
+     * */
+    uint8_t buf[64];
+    struct unit u;
+    size_t units_len = sizeof(units) / sizeof(struct unit) - 1;
+    for (int i = units_len - 1; i >= 0; --i) {
+        u = units[i];
+        if (u.toms <= 0) return false;
+        if (ttl % (int64_t)u.toms == 0) break;
     }
-    for (; i >=0; i--) {
-        if (ttl % (int64_t)units[i].toms == 0) {
-            len = (uint32_t)sprintf((char *)intbuf, "%"PRIi64"%s",
-                                    (ttl / (int64_t)units[i].toms),
-                                    units[i].name);
-            found = true;
-            break;
-        }
-    }
-    if (found) {
-        str->data = nc_strndup(intbuf, len);
-        if (str->data) {
-            str->len = len;
-            return true;
-        }
-    }
-    return false;
+
+    uint32_t len = sprintf((char*)buf,
+            "%"PRIi64"%s",
+            ttl / u.toms,
+            u.name);
+
+    str->data = nc_strndup(buf, len);
+    str->len = len;
+
+    return true;
 }
 
 bool

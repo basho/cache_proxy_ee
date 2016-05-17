@@ -1,3 +1,5 @@
 *.pyc
 *.out
 *.log
+# riak_common.py is linked from tests/test_riak
+test_riak_failure/riak_common.py

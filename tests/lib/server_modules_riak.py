@@ -33,37 +33,31 @@ class RiakCluster:
         for (node_name, port) in self.node_name_ports():
             self._run(TT('./_binaries/create_riak_devrel_from_tarball.sh $node_name $port', {'node_name': node_name, 'port': port}))
 
-    def start(self):
-        if self._alive():
-            logging.warn('%s already start' % (self))
-            return
-
-        t1 = time.time()
-        max_wait = 60
-        while not self._alive():
-            if self._start():
-                break
-            if time.time() - t1 > max_wait:
-                break
-            time.sleep(1)
-        t2 = time.time()
-        logging.info('%s start ok in %.2f seconds' % (self, t2 - t1))
-        self._ensure_string_dt()
-        self._ensure_set_dt()
-        logging.info('set bucket-type exists, observe, add, remove away!')
+        if not self.start():
+            raise RiakError('Unable to start Riak nodes during deploy')
 
         if len(self.node_name_ports()) > 1:
             self._cluster_command('./_binaries/create_riak_cluster.sh', 3)
+
+    def start(self):
+        t1 = time.time()
+        max_wait = getenv('T_RIAK_START_MAX_WAIT', 60, lambda x: int(x))
+        is_alive = 1 == 0
+        while not is_alive:
+            is_alive = self._start()
+            if not is_alive:
+                if time.time() - t1 > max_wait:
+                    break
+                time.sleep(1)
+        t2 = time.time()
+        logging.info('%s start ok in %.2f seconds' % (self, t2 - t1))
+        return is_alive
 
     def _start(self):
         ret = self._cluster_command('./_binaries/service_riak_nodes.sh start', 3)
         return 0 == ret
 
     def stop(self):
-        if not self._alive():
-            logging.warn('%s already stop' % (self))
-            return
-
         t1 = time.time()
         max_wait = 60
         while self._alive():
@@ -76,11 +70,6 @@ class RiakCluster:
         logging.info('%s stop ok in %.2f seconds' %(self, t2 - t1))
 
     def _stop(self):
-        if len(self.node_name_ports()) > 1:
-            try:
-                self._cluster_command('./_binaries/teardown_riak_cluster.sh', 3)
-            except subprocess.CalledProcessError:
-                pass
         ret = self._cluster_command('./_binaries/service_riak_nodes.sh stop', 3)
         return 0 == ret
 
@@ -130,17 +119,31 @@ class RiakCluster:
        ret = self._cluster_command('./_binaries/service_riak_nodes.sh ping', 3)
        return 0 == ret
 
+    def _log_riak_line(self, line):
+        outfile_path = getenv('T_RIAK_TEST_LOG', os.devnull)
+        with open(outfile_path, 'a') as outfile:
+            outfile.write(line + '\n')
+
     def _run(self, raw_cmd):
         logging.debug('running: %s' % raw_cmd)
         ret = 1
-        outfile = getenv('T_RIAK_TEST_LOG', os.devnull)
-        with open(outfile, 'a') as devnull:
-            ret = subprocess.call(raw_cmd.split(), stdout=devnull, stderr=subprocess.STDOUT)
+        outfile_path = getenv('T_RIAK_TEST_LOG', os.devnull)
+        self._log_riak_line("_running: %s" % raw_cmd)
+        with open(outfile_path, 'a') as outfile:
+            ret = subprocess.call(raw_cmd.split(), stdout=outfile, stderr=subprocess.STDOUT)
         logging.debug('[%d] %s' % (ret, raw_cmd))
+        self._log_riak_line("_ran [ %d ]: %s" % (ret, raw_cmd))
         return ret
 
     def clean(self):
-        pass
+        self._teardown_cluster()
+
+    def _teardown_cluster(self):
+        if len(self.node_name_ports()) > 1:
+            try:
+                self._cluster_command('./_binaries/teardown_riak_cluster.sh', 3)
+            except subprocess.CalledProcessError:
+                pass
 
     def base_dir(self):
         return '/tmp/r'
@@ -168,17 +171,20 @@ class RiakCluster:
 
     def shutdown(self, node_names):
         ret = self._nodes_command(node_names, './_binaries/service_riak_nodes.sh stop', 3)
+        if 0 == ret:
+            self._teardown_cluster()
         return 0 == ret
 
     def restore(self):
         return self.start()
 
-    def _ensure_string_dt(self):
+    def ensure_string_dt(self):
         node_name = self.node_names()[0]
         self.__alive() or self.start()
+        bucket_type_name = 'strings'
         bucket_type_options = { \
             'devrel_path': self._devrel_path(node_name) \
-            ,'bucket_type': "strings" \
+            ,'bucket_type': bucket_type_name \
             ,'bucket_type_props': '{"props":{}}' \
         }
 
@@ -188,11 +194,11 @@ class RiakCluster:
                 
         if 0 != self._run(TT('$devrel_path/bin/riak-admin bucket-type create $bucket_type $bucket_type_props', \
                 bucket_type_options)):
-                raise RiakError('Unable to create set bucket_type')
+                raise RiakError('Unable to create {0} bucket_type'.format(bucket_type_name))
 
         if 0 != self._run(TT('$devrel_path/bin/riak-admin bucket-type activate $bucket_type', \
                 bucket_type_options)):
-                raise RiakError('Unable to activate set bucket_type')
+                raise RiakError('Unable to activate {0} bucket_type'.format(bucket_type_name))
 
     def _ensure_dt_bucket_type(self, bucket_type_name, datatype):
         node_name = self.node_names()[0]
@@ -216,16 +222,18 @@ class RiakCluster:
                 
         if 0 != self._run(TT('$devrel_path/bin/riak-admin bucket-type create $bucket_type $bucket_type_props', \
                 bucket_type_options)):
-                raise RiakError('Unable to create set bucket_type')
+                raise RiakError('Unable to create {0} bucket_type'.format(bucket_type_name))
 
         if 0 != self._run(TT('$devrel_path/bin/riak-admin bucket-type activate $bucket_type', \
                 bucket_type_options)):
-                raise RiakError('Unable to activate set bucket_type')
+                raise RiakError('Unable to activate {0} bucket_type'.format(bucket_type_name))
 
-    def _ensure_set_dt(self):
-        # TODO: set bucket-type name should be arbitrary, but it is hardcoded
-        # in cache proxy. we may be okay with that, but follow up
+    def ensure_set_dt(self):
+        # cache proxy supports arbitrary datatype name just like bucket, but
+        # using 'sets' to reduce bucket type setup
         self._ensure_dt_bucket_type('sets', 'set')
+
+    def ensure_rra_bucket_props_dt(self):
         self._ensure_dt_bucket_type('rra', '')
         self._ensure_dt_bucket_type('rra_set', 'set')
         self._ensure_dt_bucket_type('rra_counter ', 'counter')

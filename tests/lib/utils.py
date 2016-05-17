@@ -34,6 +34,14 @@ def getenv(key, default, conversion_func = None):
             value = default
     return value
 
+def to_bool(x):
+    return x in [
+            'True', 'true',
+            'Yes', 'yes', 'y',
+            'On', 'on',
+            'Enabled'
+            ]
+
 default_retry_times = getenv('T_RETRY_TIMES', 5, int)
 default_retry_delay = getenv('T_RETRY_DELAY', 0.1, float)
 

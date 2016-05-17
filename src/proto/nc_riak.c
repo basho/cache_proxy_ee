@@ -851,13 +851,12 @@ encode_pb_del_req(struct msg* r, struct conn* s_conn, msg_type_t type)
         r->noreply = 1;
         r->frag_owner->nfrag_done = r->frag_owner->nfrag;
 
-        // TODO: likely make this an if something in q, otherwise
-        // this is crashing for DEL of a single bucketless key
-        // c_conn->dequeue_outq(ctx, conn, r);
-
         status = event_add_out(ctx->evb, conn);
 
-        /* prevent from forwarding */
+        /* prevent from forwarding
+         * this return code also prevent message from putting into queue
+         * that is why no need to clean up queue
+         */
         return NC_EAGAIN;
     }
     return NC_ERROR;

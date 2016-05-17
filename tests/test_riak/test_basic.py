@@ -97,7 +97,10 @@ def test_nc_stat():
 
 def test_bucket_prop_ttl():
     (_, _, nutcracker, redis) = getconn()
-    riak_node = 'localhost:%d' % riak_cluster.port()
+    # TODO: strangely localhost did not work on OSX, investigate why the
+    # `nutcracker admin` fails to resolve localhost correctly.
+    riak_node = '127.0.0.1:%d' % riak_cluster.port()
+
     buckets_ttl = [['bucket1', 2], ['bucket2', 4],
                    ['bucket3', 8], ['bucket4', 10]]
     value = 'data'
@@ -107,7 +110,12 @@ def test_bucket_prop_ttl():
         if bt[1] > max_ttl:
             max_ttl = bt[1]
 
+    # TODO: should read back value using nc.admin get-bucket-prop to test the
+    # basic CRUD of the `nutcracker admin` set of commands
     time.sleep(20) # sleep until centralized config is synced
+
+    # NOTE: the following actions+assertions test whether bucket-specific ttl
+    # is in effect
     for bt in buckets_ttl:
         key = '%s:key' % bt[0]
         nutcracker.set(key, value)
