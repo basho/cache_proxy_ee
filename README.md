@@ -142,7 +142,13 @@ provides a command-line argument -t or --test-conf that can be used to test the 
 configuration file for any syntax error.
 
 ## Centralized configuration ##
-nutcracker has a centralized configuration for per bucket properties which are stored in riak cluster. Nutcracker poll this configurations from cluster ever 15s. Configuration is saved in special key with special datatypes: 'rra', 'rra_set', 'rra_counter'. Do not use datatypes with the same names in order to rewrite this configuration. To enable this feature on riak cluster, this datatypes should be created and enabled on riak cluster with follow commands:
+nutcracker has a centralized configuration for per bucket properties which are
+stored in riak cluster. Nutcracker polls this configuration from the riak
+cluster every 15s. Configuration is saved in special key with special bucket
+types: 'rra', 'rra_set', 'rra_counter'. Do not use bucket types with the same
+names in order to rewrite this configuration. To enable this feature, the rra
+datatypes should be created and enabled on the riak cluster with the following:
+
 ```bash
 riak-admin bucket-type create rra
 riak-admin bucket-type activate rra
