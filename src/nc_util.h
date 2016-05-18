@@ -19,6 +19,7 @@
 #define _NC_UTIL_H_
 
 #include <stdarg.h>
+#include <nc_string.h>
 #include <protobuf-c/protobuf-c.h>
 
 #define LF                  (uint8_t) 10
@@ -234,5 +235,10 @@ void nc_split_key_string(uint8_t *keystring, size_t keystringlen,
                          ProtobufCBinaryData *datatype,
                          ProtobufCBinaryData *bucket,
                          ProtobufCBinaryData *key);
+bool nc_read_ttl_value(struct string *value, int64_t *np);
+bool nc_ttl_value_to_string(struct string *str, int64_t ttl);
+bool nc_parse_datatype_bucket(uint8_t *data, uint32_t len,
+                              struct string *datatype, struct string *bucket);
+bool nc_c_strequ(const char *s1, const char *s2);
 
 #endif

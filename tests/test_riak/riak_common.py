@@ -87,6 +87,7 @@ def _cluster_setup(lnc, lriak, lredis):
         r.stop()
         r.start()
     lriak.ensure_string_dt()
+    lriak.ensure_rra_bucket_props_dt()
     lriak.ensure_set_dt()
 
 def cluster_teardown():

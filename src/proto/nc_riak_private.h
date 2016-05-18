@@ -1,8 +1,8 @@
 #ifndef _NC_RIAK_H_
 #define _NC_RIAK_H_
 
-#include <riak_kv.pb-c.h>
-#include <riak_dt.pb-c.h>
+#include <proto/riak_kv.pb-c.h>
+#include <proto/riak_dt.pb-c.h>
 
 #define CONF_UNSET_NUM -1
 
@@ -10,6 +10,8 @@ typedef enum {
     REQ_RIAK_GET = 9,
     REQ_RIAK_PUT = 11,
     REQ_RIAK_DEL = 13,
+    REQ_RIAK_COUNTER_UPDATE = 50,
+    REQ_RIAK_COUNTER_GET = 52,
     REQ_RIAK_DT_FETCH = 80,
     REQ_RIAK_DT_UPDATE = 82
 } riak_req_t;
@@ -19,6 +21,8 @@ typedef enum {
     RSP_RIAK_GET = 10,
     RSP_RIAK_PUT = 12,
     RSP_RIAK_DEL = 14,
+    RSP_RIAK_COUNTER_UPDATE = 51,
+    RSP_RIAK_COUNTER_GET = 53,
     RSP_RIAK_DT_FETCH = 81,
     RSP_RIAK_DT_UPDATE = 83
 } riak_rsp_t;
@@ -56,7 +60,6 @@ rstatus_t repack_dt_fetch_resp(struct msg* r, DtFetchResp* dtresp);
 
 bool extract_rsp(struct msg* r, uint32_t len, uint8_t* msgid, unpack_func func,
             void ** rpbresp);
-bool extract_del_rsp(struct msg* r, uint32_t len, uint8_t* msgid);
 rstatus_t extract_bucket_key_value(struct msg *r,
                                    ProtobufCBinaryData *type,
                                    ProtobufCBinaryData *bucket,

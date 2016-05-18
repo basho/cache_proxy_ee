@@ -97,6 +97,12 @@ struct servers {
     int64_t            next_rebuild;         /* next distribution rebuild time in usec */
 };
 
+struct bucket_prop {
+    struct string       datatype;            /* datatype */
+    struct string       bucket;              /* bucket */
+    int64_t             ttl_ms;              /* port */
+};
+
 struct backend_opt {
     connection_type_t  type;                 /* The type of backend server */
     int                max_resend;           /* maximum number of backend servers we will resend to */
@@ -185,5 +191,6 @@ void server_pool_deinit(struct array *server_pool);
 
 int64_t server_pool_bucket_ttl(struct server_pool *pool, uint8_t *datatype, uint32_t datatypelen,
                                uint8_t *bucket, uint32_t bucketlen);
+void server_pool_bp_deinit(struct array *bpa);
 
 #endif

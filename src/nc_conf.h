@@ -80,12 +80,6 @@ struct conf_server {
     unsigned        backend:1;  /* backend? */
 };
 
-struct bucket_prop {
-    struct string   datatype;   /* datatype */
-    struct string   bucket;     /* bucket */
-    int64_t         ttl_ms;     /* port */
-};
-
 struct conf_pool {
     struct string      name;                  /* pool name (root node) */
     struct conf_listen listen;                /* listen: */
@@ -166,5 +160,7 @@ rstatus_t conf_pool_each_transform(void *elem, void *data);
 
 struct conf *conf_create(char *filename);
 void conf_destroy(struct conf *cf);
+
+bool conf_save_to_file(const char *filename, struct array *pools);
 
 #endif

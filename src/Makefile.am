@@ -8,6 +8,7 @@ AM_CPPFLAGS += -I $(top_srcdir)/src/hashkit
 AM_CPPFLAGS += -I $(top_srcdir)/src/proto
 AM_CPPFLAGS += -I $(top_srcdir)/src/event
 AM_CPPFLAGS += -I $(top_srcdir)/contrib/yaml-0.1.4/include
+AM_CPPFLAGS += -I $(top_srcdir)/src/admin
 
 AM_CFLAGS = $(PROTOBUF_CFLAGS)
 # about -fno-strict-aliasing: https://github.com/twitter/twemproxy/issues/276
@@ -29,7 +30,7 @@ if OS_FREEBSD
 AM_LDFLAGS += -lexecinfo
 endif
 
-SUBDIRS = hashkit proto event
+SUBDIRS = hashkit proto event admin
 
 sbin_PROGRAMS = nutcracker
 
@@ -58,5 +59,6 @@ nutcracker_SOURCES =			\
 nutcracker_LDADD =  $(top_builddir)/src/hashkit/libhashkit.a
 nutcracker_LDADD += $(top_builddir)/src/proto/libproto.a
 nutcracker_LDADD += $(top_builddir)/src/event/libevent.a
+nutcracker_LDADD += $(top_builddir)/src/admin/libadmin.a
 nutcracker_LDADD += $(top_builddir)/contrib/yaml-0.1.4/src/.libs/libyaml.a
 nutcracker_LDADD += $(PROTOBUF_LIBS)

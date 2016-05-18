@@ -200,15 +200,21 @@ class RiakCluster:
                 bucket_type_options)):
                 raise RiakError('Unable to activate {0} bucket_type'.format(bucket_type_name))
 
-
-    def ensure_dt_bucket_type(self, bucket_type_name, datatype):
+    def _ensure_dt_bucket_type(self, bucket_type_name, datatype):
         node_name = self.node_names()[0]
         self.__alive() or self.start()
-        bucket_type_options = { \
-            'devrel_path': self._devrel_path(node_name) \
-            ,'bucket_type': bucket_type_name \
-            ,'bucket_type_props': '{"props":{"datatype":"' + datatype + '"}}' \
-        }
+        if len(datatype) > 0:
+            bucket_type_options = { \
+                'devrel_path': self._devrel_path(node_name) \
+                ,'bucket_type': bucket_type_name \
+                ,'bucket_type_props': '{"props":{"datatype":"' + datatype + '"}}' \
+            }
+        else:
+            bucket_type_options = { \
+                'devrel_path': self._devrel_path(node_name) \
+                ,'bucket_type': bucket_type_name \
+                ,'bucket_type_props': '' \
+            }
 
         if 0 == self._run(TT('$devrel_path/bin/riak-admin bucket-type status $bucket_type', \
                 bucket_type_options)):
@@ -225,4 +231,9 @@ class RiakCluster:
     def ensure_set_dt(self):
         # cache proxy supports arbitrary datatype name just like bucket, but
         # using 'sets' to reduce bucket type setup
-        self.ensure_dt_bucket_type('sets', 'set')
+        self._ensure_dt_bucket_type('sets', 'set')
+
+    def ensure_rra_bucket_props_dt(self):
+        self._ensure_dt_bucket_type('rra', '')
+        self._ensure_dt_bucket_type('rra_set', 'set')
+        self._ensure_dt_bucket_type('rra_counter ', 'counter')

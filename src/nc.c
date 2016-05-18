@@ -27,6 +27,8 @@
 #include <nc_core.h>
 #include <nc_conf.h>
 #include <nc_signal.h>
+#include <admin/nc_admin.h>
+#include <admin/nc_admin_poll.h>
 
 #define NC_CONF_PATH        "conf/nutcracker.yml"
 
@@ -205,6 +207,7 @@ nc_show_usage(void)
         "Usage: nutcracker [-?hVdDt] [-v verbosity level] [-o output file]" CRLF
         "                  [-c conf file] [-s stats port] [-a stats addr]" CRLF
         "                  [-i stats interval] [-p pid file] [-m mbuf size]" CRLF
+        "       nutcracker admin riak_host:riak_port command args" CRLF
         "");
     log_stderr(
         "Options:" CRLF
@@ -222,6 +225,8 @@ nc_show_usage(void)
         "  -i, --stats-interval=N : set stats aggregation interval in msec (default: %d msec)" CRLF
         "  -p, --pid-file=S       : set pid file (default: %s)" CRLF
         "  -m, --mbuf-size=N      : set size of mbuf chunk in bytes (default: %d bytes)" CRLF
+        "" CRLF
+        "nutcracker admin is an embedded admin tool, run 'nutcracker admin' for details" CRLF
         "",
         NC_LOG_DEFAULT, NC_LOG_MIN, NC_LOG_MAX,
         NC_LOG_PATH != NULL ? NC_LOG_PATH : "stderr",
@@ -524,6 +529,8 @@ nc_run(struct instance *nci)
     if (ctx == NULL) {
         return;
     }
+    /* run poll service */
+    nc_admin_poll_start(ctx);
 
     /* run rabbit run */
     for (;;) {
@@ -531,14 +538,33 @@ nc_run(struct instance *nci)
         if (status != NC_OK) {
             break;
         }
+        if (nc_admin_poll_sync()) {
+            if (nci->conf_filename) {
+                conf_save_to_file(nci->conf_filename, &ctx->pool);
+            }
+        }
     }
 
     core_stop(ctx);
+    nc_admin_poll_stop();
 }
 
 int
 main(int argc, char **argv)
 {
+    if (argc > 1) {
+        if (nc_c_strequ(argv[1], "admin")) {
+            if (argc > 3) {
+                char *arg1 = argc > 4 ? argv[4] : NULL;
+                char *arg2 = argc > 5 ? argv[5] : NULL;
+                char *arg3 = argc > 6 ? argv[6] : NULL;
+                return nc_admin_command(argv[2], argv[3], arg1, arg2, arg3);
+            } else {
+                nc_admin_show_usage();
+                exit(1);
+            }
+        }
+    }
     rstatus_t status;
     struct instance nci;
 
