@@ -778,19 +778,19 @@ nc_ttl_value_to_string(struct string *str, int64_t ttl)
     uint8_t buf[64];
     struct unit u;
     size_t units_len = sizeof(units) / sizeof(struct unit) - 1;
-    for (int i = units_len - 1; i >= 0; --i) {
+    for (int i = (int)units_len - 1; i >= 0; --i) {
         u = units[i];
         if (u.toms <= 0) return false;
         if (ttl % (int64_t)u.toms == 0) break;
     }
 
-    uint32_t len = sprintf((char*)buf,
+    int len = sprintf((char*)buf,
             "%"PRIi64"%s",
-            ttl / u.toms,
+            (int64_t)(ttl / (int64_t)u.toms),
             u.name);
 
     str->data = nc_strndup(buf, len);
-    str->len = len;
+    str->len = (uint32_t)len;
 
     return true;
 }
