@@ -778,7 +778,8 @@ nc_ttl_value_to_string(struct string *str, int64_t ttl)
     uint8_t buf[64];
     struct unit u;
     size_t units_len = sizeof(units) / sizeof(struct unit) - 1;
-    for (int i = (int)units_len - 1; i >= 0; --i) {
+    int i;
+    for (i = (int)units_len - 1; i >= 0; --i) {
         u = units[i];
         if (u.toms <= 0) return false;
         if (ttl % (int64_t)u.toms == 0) break;
