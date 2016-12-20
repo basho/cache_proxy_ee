@@ -522,28 +522,6 @@ add_set_msg_key(struct context *ctx, struct conn* c_conn, char* keyname,
     struct server* server = (struct server*)s_conn->owner;
     struct server_pool* pool = (struct server_pool*)server->owner;
 
-    /* TTL portion */
-    uint32_t ttlfmtlen = 1;
-    uint32_t ttlndig = 0;
-    bool use_ttl = false;
-    uint32_t ttl_ms = 0;
-
-    if (pool->server_ttl_ms > 0) {
-        use_ttl = true;
-        ttl_ms = (uint32_t)(pool->server_ttl_ms);
-        ttlndig = ndig(ttl_ms); /* Number of digits in ttl_ms (length of the number we will write) */
-        ttlfmtlen = ndig(ttlndig) + 1; /* Number of digits in ttlndig (length of the formatted ttlndig) */
-    }
-
-    uint32_t ttlstrlen = ttlfmtlen + ttlndig + 12;
-    char ttlstr[ttlstrlen + 1];
-
-    if (use_ttl) {
-        sprintf(ttlstr, "$2\r\npx\r\n$%d\r\n%u\r\n", ttlndig, ttl_ms);
-    }
-
-    ASSERT(strlen(ttlstr) == ttlstrlen);
-
     /* Key portion */
     uint32_t keynamendig = ndig(keynamelen);
     uint32_t keynamefmtlen = keynamendig + 1;
@@ -552,6 +530,21 @@ add_set_msg_key(struct context *ctx, struct conn* c_conn, char* keyname,
     sprintf(keynamestr, "$%d\r\n%s\r\n", keynamelen, keyname);
 
     ASSERT(strlen(keynamestr) == keynamestrlen);
+
+    /* TTL portion */
+    bool use_ttl = false;
+    uint32_t ttl_ms, ttlndig = 0;
+    if (pool->server_ttl_ms > 0) {
+        use_ttl = true;
+        ttl_ms = (uint32_t)(pool->server_ttl_ms);
+        ttlndig = ndig(ttl_ms); /* Number of digits in ttl_ms (length of the number we will write) */
+    }
+    uint32_t ttlfmtlen = ndig(ttlndig) + ttlndig + 1;
+    uint32_t ttlstrlen = ttlfmtlen + 4;
+    char ttlstr[ttlstrlen + 1];
+    if (use_ttl) {
+        sprintf(ttlstr, "$%d\r\n%d\r\n", ttlndig, ttl_ms);
+    }
 
     /* Value portion */
     uint32_t keyvalndig = ndig(keyvallen);
@@ -569,10 +562,11 @@ add_set_msg_key(struct context *ctx, struct conn* c_conn, char* keyname,
         return NC_ENOMEM;
     }
 
+    /* IMPORTANT - using Set w/ Expiry (PSETEX) b/c SET writes through to Riak */
     rstatus_t status = NC_OK;
     if (use_ttl) {
-        if ((status = msg_copy_char(msg, "*5\r\n$3\r\nset\r\n",
-                                    strlen("*5\r\n$3\r\nset\r\n")))
+        if ((status = msg_copy_char(msg, "*4\r\n$6\r\npsetex\r\n",
+                                    strlen("*4\r\n$6\r\npsetex\r\n")))
             != NC_OK) {
             msg_put(msg);
             return status;
@@ -591,6 +585,13 @@ add_set_msg_key(struct context *ctx, struct conn* c_conn, char* keyname,
         return status;
     }
 
+    if (use_ttl) {
+        if ((status = msg_copy_char(msg, ttlstr, strlen(ttlstr))) != NC_OK) {
+            msg_put(msg);
+            return status;
+        }
+    }
+
     if ((status = msg_copy_char(msg, keyvalstr, strlen(keyvalstr))) != NC_OK) {
         msg_put(msg);
         return status;
@@ -604,13 +605,6 @@ add_set_msg_key(struct context *ctx, struct conn* c_conn, char* keyname,
     if ((status = msg_copy_char(msg, "\r\n", 2)) != NC_OK) {
         msg_put(msg);
         return status;
-    }
-
-    if (use_ttl) {
-        if ((status = msg_copy_char(msg, ttlstr, strlen(ttlstr))) != NC_OK) {
-            msg_put(msg);
-            return status;
-        }
     }
 
     msg->swallow = 1;

@@ -6,7 +6,7 @@
 # to configure.ac discrepancy creates when pumping versions.
 m4_define([NC_MAJOR], 1)
 m4_define([NC_MINOR], 1)
-m4_define([NC_PATCH], 1)
+m4_define([NC_PATCH], 2)
 m4_define([NC_BUGS], [riak-users@lists.basho.com])
 
 # Initialize autoconf
