@@ -1008,10 +1008,24 @@ add_set_msg_riak(struct context *ctx, struct conn* c_conn, struct msg* msg)
     RpbGetReq* req = 0;
     parse_pb_get_req(msg->peer, &len, &msgid, &req);
 
-    uint32_t keynamelen = req->bucket.len + req->key.len + 1;
+    uint32_t keynamelen = req->key.len;
+    if (req->type.len > 0) {
+        keynamelen += req->type.len + 1;
+    }
+    if (req->bucket.len > 0) {
+        keynamelen += req->bucket.len + 1;
+    }
     char keyname[keynamelen + 1];
-    sprintf(keyname, "%.*s:%.*s", (int)req->bucket.len, req->bucket.data,
-            (int)req->key.len, req->key.data);
+    if (req->type.len > 0 && req->bucket.len > 0) {
+        sprintf(keyname, "%.*s:%.*s:%.*s",
+                (int)req->type.len, req->type.data,
+                (int)req->bucket.len, req->bucket.data,
+                (int)req->key.len, req->key.data);
+    } else if (req->bucket.len > 0) {
+        sprintf(keyname, "%.*s:%.*s",
+                (int)req->bucket.len, req->bucket.data,
+                (int)req->key.len, req->key.data);
+    }
 
     if (req)
         nc_free(req);

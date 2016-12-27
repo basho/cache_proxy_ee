@@ -35,6 +35,7 @@
 #define CONF_DEFAULT_ARGS       3
 #define CONF_DEFAULT_POOL       8
 #define CONF_DEFAULT_SERVERS    8
+#define CONF_DEFAULT_RIAK_BUCKET_TTLS 5
 
 #define CONF_UNSET_NUM  -1
 #define CONF_UNSET_PTR  NULL
@@ -78,6 +79,13 @@ struct conf_server {
     unsigned        backend:1;  /* backend? */
 };
 
+struct conf_riak_bucket_ttl {
+    struct   string bucket_type;
+    struct   string bucket;
+    int64_t  ttl_ms;             /* TTL for keys in frontend servers, in msec */
+    unsigned valid:1;            /* valid? */
+};
+
 struct conf_pool {
     struct string      name;                  /* pool name (root node) */
     struct conf_listen listen;                /* listen: */
@@ -110,6 +118,7 @@ struct conf_pool {
     int                backend_riak_deletedvclock; /* Riak deletedvclock */
     int                backend_riak_timeout;       /* Riak timeout */
     int64_t            server_ttl_ms;              /* TTL for keys in frontend servers, in msec */
+    struct array       riak_bucket_ttls;           /* TTL per bucket-type:bucket */
     unsigned           valid:1;               /* valid? */
 };
 
@@ -150,11 +159,17 @@ char *conf_set_distribution(struct conf *cf, struct command *cmd, void *conf);
 char *conf_set_hashtag(struct conf *cf, struct command *cmd, void *conf);
 char *conf_set_backend_type(struct conf *cf, struct command *cmd, void *conf);
 char *conf_set_server_ttl(struct conf *cf, struct command *cmd, void *conf);
+char *conf_add_riak_bucket_ttl(struct conf *cf, struct command *cmd, void *conf);
 
 rstatus_t conf_server_each_transform(void *elem, void *data);
 rstatus_t conf_pool_each_transform(void *elem, void *data);
 
 struct conf *conf_create(char *filename);
 void conf_destroy(struct conf *cf);
+
+int64_t conf_get_riak_bucket_ttl(struct array *riak_bucket_ttls,
+                                 int64_t server_ttl_ms,
+                                 char *bucket_type,
+                                 char *bucket);
 
 #endif

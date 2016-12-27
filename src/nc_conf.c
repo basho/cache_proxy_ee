@@ -21,6 +21,8 @@
 #include <proto/nc_proto.h>
 
 char* conf_add_server_(struct conf *cf, struct command *cmd, void *conf, bool backend);
+int64_t conf_ttl_string_to_ms(uint8_t *val, uint32_t val_len);
+int string_compare_with_wildcard(uint8_t *pattern, size_t pattern_len, char *s);
 
 #define DEFINE_ACTION(_hash, _name) string(#_name),
 static struct string hash_strings[] = {
@@ -129,6 +131,10 @@ static struct command conf_commands[] = {
       conf_set_server_ttl,
       offsetof(struct conf_pool, server_ttl_ms) },
 
+    { string("riak_bucket_ttls"),
+      conf_add_riak_bucket_ttl,
+      offsetof(struct conf_pool, riak_bucket_ttls) },
+
     { string("servers"),
       conf_add_server,
       offsetof(struct conf_pool, server) },
@@ -189,6 +195,15 @@ static struct command conf_commands[] = {
 };
 
 static void
+conf_riak_bucket_ttl_init(struct conf_riak_bucket_ttl *ct)
+{
+    string_init(&ct->bucket_type);
+    string_init(&ct->bucket);
+    ct->ttl_ms = 0;
+    ct->valid = 0;
+}
+
+static void
 conf_server_init(struct conf_server *cs)
 {
     string_init(&cs->pname);
@@ -211,6 +226,15 @@ conf_server_deinit(struct conf_server *cs)
     string_deinit(&cs->name);
     cs->valid = 0;
     log_debug(LOG_VVERB, "deinit conf server %p", cs);
+}
+
+static void
+conf_riak_bucket_ttls_deinit(struct conf_riak_bucket_ttl *ct)
+{
+    string_deinit(&ct->bucket_type);
+    string_deinit(&ct->bucket);
+    ct->valid = 0;
+    log_debug(LOG_VVERB, "deinit conf riak bucket ttl %p", ct);
 }
 
 rstatus_t
@@ -297,6 +321,7 @@ conf_pool_init(struct conf_pool *cp, struct string *name)
     cp->backend_riak_timeout = CONF_UNSET_NUM;
 
     array_null(&cp->server);
+    array_null(&cp->riak_bucket_ttls);
 
     cp->valid = 0;
 
@@ -317,6 +342,15 @@ conf_pool_init(struct conf_pool *cp, struct string *name)
     if (status != NC_OK) {
         string_deinit(&cp->name);
         array_deinit(&cp->server);
+        return status;
+    }
+
+    status = array_init(&cp->riak_bucket_ttls, CONF_DEFAULT_RIAK_BUCKET_TTLS,
+                        sizeof(struct conf_riak_bucket_ttl));
+    if (status != NC_OK) {
+        string_deinit(&cp->name);
+        array_deinit(&cp->server);
+        array_deinit(&cp->server_be);
         return status;
     }
 
@@ -345,8 +379,13 @@ conf_pool_deinit(struct conf_pool *cp)
         conf_server_deinit(array_pop(&cp->server_be));
     }
 
+    while (array_n(&cp->riak_bucket_ttls) != 0) {
+        conf_riak_bucket_ttls_deinit(array_pop(&cp->riak_bucket_ttls));
+    }
+
     array_deinit(&cp->server);
     array_deinit(&cp->server_be);
+    array_deinit(&cp->riak_bucket_ttls);
 
     log_debug(LOG_VVERB, "deinit conf pool %p", cp);
 }
@@ -413,6 +452,7 @@ conf_pool_each_transform(void *elem, void *data)
     sp->server_retry_timeout = (int64_t)cp->server_retry_timeout * 1000LL;
     sp->server_failure_limit = (uint32_t)cp->server_failure_limit;
     sp->server_ttl_ms = (uint32_t)cp->server_ttl_ms;
+    sp->riak_bucket_ttls = cp->riak_bucket_ttls;
     sp->auto_eject_hosts = cp->auto_eject_hosts ? 1 : 0;
     sp->preconnect = cp->preconnect ? 1 : 0;
 
@@ -1208,9 +1248,9 @@ conf_validate_structure(struct conf *cf)
             break;
 
         case YAML_SEQUENCE_START_EVENT:
-            if (seq > 1) {
+            if (seq > 2) {
                 error = true;
-                log_error("conf: '%s' has more than two sequence directives",
+                log_error("conf: '%s' has more than three sequence directives",
                           cf->fname);
             } else if (depth != CONF_MAX_DEPTH) {
                 error = true;
@@ -1848,36 +1888,139 @@ conf_set_server_ttl(struct conf *cf, struct command *cmd, void *conf)
 
     value = array_top(&cf->arg);
 
-    char* val = (char*)value->data;
-    char* ptr = 0;
+    uint8_t* val = value->data;
+    int64_t ttl_ms = conf_ttl_string_to_ms(val, value->len);
+    if (ttl_ms == -1) return CONF_ERROR;
+    if (ttl_ms == -2) return (void*)"has invalid units";
+    *np = ttl_ms;
+    return CONF_OK;
+}
 
-    double dval = strtod(val, &ptr);
-
-    if (ptr == val) {
-        return CONF_ERROR;
+/*
+ * convert ttl formatted duration to milliseconds
+ * returns:
+ *   * non-negative: milliseconds
+ *   * -1:           missing leading number portion
+ *   * -2:           invalid unit specified
+ * */
+int64_t
+conf_ttl_string_to_ms(uint8_t *val, uint32_t val_len) {
+    /* example input: 15s  */
+    char *valc = (char*)val;
+    char *ptr = 0;
+    /* capture up to units or end-of-input */
+    double dval = strtod(valc, &ptr);
+    if (ptr == valc) {
+        return -1;
     }
 
+    /* determine unit and multiply by ms per unit */
     uint32_t unit_len = 0;
-    char unitstr[value->len+1];
+    char unitstr[val_len + 1];
 
     while (*ptr != '\0') {
-        if (isalpha(*ptr) && !isspace(*ptr))
+        if (isalpha(*ptr) && !isspace(*ptr)) {
             unitstr[unit_len++] = *ptr;
-        ptr++;
+        }
+        ++ptr;
     }
     unitstr[unit_len] = '\0';
-    
-    struct unit* unitptr=0;
-    for (unitptr = units; strlen(unitptr->name) != 0; unitptr++) {
+
+    struct unit* unitptr = 0;
+    for (unitptr = units; strlen(unitptr->name) != 0; ++unitptr) {
         if (strlen(unitptr->name) == strlen(unitstr)) {
             if (strcasecmp(unitptr->name, unitstr) == 0) {
-                *np = (int64_t)(dval * unitptr->toms);
-                return CONF_OK;
+                return (int64_t)(dval * unitptr->toms);
             }
         }
     }
+    return -2;
+}
 
-    return (void*)"has invalid units";
+char *
+conf_add_riak_bucket_ttl(struct conf *cf, struct command *cmd, void *conf)
+{
+    rstatus_t status;
+    struct array *a;
+    struct conf_riak_bucket_ttl *field;
+    struct string *value;
+    uint8_t *p, *q, *last;
+    uint8_t *bucket_type, *bucket, *ttl;
+    uint32_t k, delim_len, bucket_type_len, bucket_len, ttl_len;
+    char delim[] = "::";
+    delim_len = 2;
+
+    p = conf;
+    a = (struct array *)(p + cmd->offset);
+
+    field = array_push(a);
+    if (field == NULL) {
+        return CONF_ERROR;
+    }
+
+    conf_riak_bucket_ttl_init(field);
+
+    value = array_top(&cf->arg);
+
+    /* parse "bucket_type:bucket:ttl" */
+    p = value->data;
+    last = value->data + value->len;
+    bucket_type = NULL;
+    bucket_type_len = 0;
+    bucket = NULL;
+    bucket_len = 0;
+    ttl = 0;
+    ttl_len = 0;
+
+    for (k = 0; k < sizeof(delim); k++) {
+        q = nc_strchr(p, last, delim[k]);
+        if (q == NULL) {
+            ttl = p;
+            q = last;
+            ttl_len = (uint32_t)(q - p);
+            break;
+        }
+
+        switch (k) {
+        case 0:
+            bucket_type = (uint8_t*)p;
+            bucket_type_len = (uint32_t)(q - p);
+            break;
+
+        case 1:
+            bucket = p;
+            bucket_len = (uint32_t)(q - p);
+            break;
+
+        default:
+            NOT_REACHED();
+        }
+
+        p = q + 1;
+    }
+
+    if (k != delim_len) {
+        return "has an invalid \"bucket_type:bucket:ttl\" format string";
+    }
+
+    field->ttl_ms = conf_ttl_string_to_ms(ttl, ttl_len);
+    if (field->ttl_ms < 0) {
+        return "has an invalid ttl in \"bucket_type:bucket:ttl\" format string";
+    }
+
+    status = string_copy(&field->bucket_type, bucket_type, bucket_type_len);
+    if (status != NC_OK) {
+        return CONF_ERROR;
+    }
+
+    status = string_copy(&field->bucket, bucket, bucket_len);
+    if (status != NC_OK) {
+        return CONF_ERROR;
+    }
+
+    field->valid = 1;
+
+    return CONF_OK;
 }
 
 char *
@@ -2045,4 +2188,51 @@ conf_set_backend_type(struct conf *cf, struct command *cmd, void *conf)
     }
 
     return "is not a valid backend type";
+}
+
+int
+string_compare_with_wildcard(uint8_t *pattern, size_t pattern_len, char *s)
+{
+    char pattern_c[pattern_len + 1];
+    for (int i = 0; i < pattern_len; ++i) {
+        pattern_c[i] = (char)pattern[i];
+    }
+    pattern_c[pattern_len] = '\0';
+    if (pattern_c[0] == '*') {
+        return 0;
+    }
+    size_t s_len = strlen(s);
+    if (pattern_len != s_len) {
+        return pattern_len < s_len ? -1 : 1;
+    }
+    return strncmp(pattern_c, s, pattern_len);
+}
+
+int64_t
+conf_get_riak_bucket_ttl(struct array *riak_bucket_ttls,
+                         int64_t server_ttl_ms,
+                         char *bucket_type,
+                         char *bucket)
+{
+    uint32_t i, nelem;
+    nelem = array_n(riak_bucket_ttls);
+    if (nelem == 0)
+    {
+        return server_ttl_ms;
+    }
+
+    for (i = 0; i < nelem; ++i) {
+        struct conf_riak_bucket_ttl *elem = array_get(riak_bucket_ttls, i);
+        if ((string_compare_with_wildcard(elem->bucket_type.data,
+                                           elem->bucket_type.len,
+                                           bucket_type) == 0)) {
+            if (string_compare_with_wildcard(elem->bucket.data,
+                                             elem->bucket.len,
+                                             bucket) == 0) {
+                return elem->ttl_ms;
+            }
+        }
+    }
+
+    return server_ttl_ms;
 }

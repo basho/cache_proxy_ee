@@ -22,6 +22,8 @@
 
 #include <nc_core.h>
 #include <nc_proto.h>
+#include <nc_conf.h>
+#include <nc_string.h>
 
 bool process_frontend_rsp(struct context *ctx, struct conn *s_conn, struct msg* msg);
 bool process_backend_rsp(struct context *ctx, struct conn *s_conn, struct msg* msg);
@@ -49,6 +51,9 @@ rstatus_t backend_enqueue_post_msg(void *elem /*struct msg *msg*/,
         void *data /*struct backend_enqueue_post_msg_param *prm*/);
 rstatus_t backend_event_add_post_msg(
         struct backend_enqueue_post_msg_param *prm);
+
+void extract_namespaced_key_elements(char *ns_key, char *bucket_type,
+                                     char *bucket, char *key);
 
 /**.......................................................................
  * A generic stub for backend processing of requests.
@@ -504,6 +509,45 @@ add_pexpire_msg_key(struct context *ctx, struct conn* c_conn, char* keyname,
     return NC_OK;
 }
 
+void
+extract_namespaced_key_elements(char *ns_key, char *bucket_type,
+                                char *bucket, char *key)
+{
+    static char *empty_string = "";
+    static char *default_string = "default";
+    char delimiter = ':';
+    char *nsk = ns_key;
+    char *p = nsk;
+    char *q = nsk;
+    char *bt, *b, *k;
+    bt = b = k = empty_string;
+    int part = 0;
+    for (; *q != '\0'; ++q) {
+        if (*q == delimiter) {
+            *q = '\0';
+            switch (part) {
+                case 0: bt = p; break;
+                case 1: b = p;  break;
+                case 2: k = p;  break;
+            }
+            ++part;
+            p = q + 1;
+        }
+    }
+    k = p;
+    /* shift and fill in bucket parts as needed */
+    if (bt == empty_string) {
+        bt = default_string;
+    }
+    if (b == empty_string) {
+        b  = bt;
+        bt = default_string;
+    }
+    strcpy(bucket_type, bt);
+    strcpy(bucket, b);
+    strcpy(key, k);
+}
+
 /**.......................................................................
  * Function to add a SET message to the server's queue, with explicit
  * keyname and keyval pos
@@ -522,28 +566,6 @@ add_set_msg_key(struct context *ctx, struct conn* c_conn, char* keyname,
     struct server* server = (struct server*)s_conn->owner;
     struct server_pool* pool = (struct server_pool*)server->owner;
 
-    /* TTL portion */
-    uint32_t ttlfmtlen = 1;
-    uint32_t ttlndig = 0;
-    bool use_ttl = false;
-    uint32_t ttl_ms = 0;
-
-    if (pool->server_ttl_ms > 0) {
-        use_ttl = true;
-        ttl_ms = (uint32_t)(pool->server_ttl_ms);
-        ttlndig = ndig(ttl_ms); /* Number of digits in ttl_ms (length of the number we will write) */
-        ttlfmtlen = ndig(ttlndig) + 1; /* Number of digits in ttlndig (length of the formatted ttlndig) */
-    }
-
-    uint32_t ttlstrlen = ttlfmtlen + ttlndig + 12;
-    char ttlstr[ttlstrlen + 1];
-
-    if (use_ttl) {
-        sprintf(ttlstr, "$2\r\npx\r\n$%d\r\n%u\r\n", ttlndig, ttl_ms);
-    }
-
-    ASSERT(strlen(ttlstr) == ttlstrlen);
-
     /* Key portion */
     uint32_t keynamendig = ndig(keynamelen);
     uint32_t keynamefmtlen = keynamendig + 1;
@@ -552,6 +574,33 @@ add_set_msg_key(struct context *ctx, struct conn* c_conn, char* keyname,
     sprintf(keynamestr, "$%d\r\n%s\r\n", keynamelen, keyname);
 
     ASSERT(strlen(keynamestr) == keynamestrlen);
+
+    /* TTL portion */
+    bool use_ttl = false;
+    uint32_t ttl_ms, ttlndig = 0;
+
+    char nskey[keynamelen + 1];
+    memcpy(nskey, keyname, keynamelen);
+    char bucket_type[keynamelen + 1],
+         bucket[keynamelen + 1],
+         key[keynamelen + 1];
+    extract_namespaced_key_elements(nskey,
+            bucket_type, bucket, key);
+
+    ttl_ms = (uint32_t)conf_get_riak_bucket_ttl(&pool->riak_bucket_ttls,
+                                                pool->server_ttl_ms,
+                                                bucket_type,
+                                                bucket);
+    if (ttl_ms > 0) {
+        use_ttl = true;
+        ttlndig = ndig(ttl_ms); /* Number of digits in ttl_ms (length of the number we will write) */
+    }
+    uint32_t ttlfmtlen = ndig(ttlndig) + ttlndig + 1;
+    uint32_t ttlstrlen = ttlfmtlen + 4;
+    char ttlstr[ttlstrlen + 1];
+    if (use_ttl) {
+        sprintf(ttlstr, "$%d\r\n%d\r\n", ttlndig, ttl_ms);
+    }
 
     /* Value portion */
     uint32_t keyvalndig = ndig(keyvallen);
@@ -569,10 +618,11 @@ add_set_msg_key(struct context *ctx, struct conn* c_conn, char* keyname,
         return NC_ENOMEM;
     }
 
+    /* IMPORTANT - using Set w/ Expiry (PSETEX) b/c SET writes through to Riak */
     rstatus_t status = NC_OK;
     if (use_ttl) {
-        if ((status = msg_copy_char(msg, "*5\r\n$3\r\nset\r\n",
-                                    strlen("*5\r\n$3\r\nset\r\n")))
+        if ((status = msg_copy_char(msg, "*4\r\n$6\r\npsetex\r\n",
+                                    strlen("*4\r\n$6\r\npsetex\r\n")))
             != NC_OK) {
             msg_put(msg);
             return status;
@@ -591,6 +641,13 @@ add_set_msg_key(struct context *ctx, struct conn* c_conn, char* keyname,
         return status;
     }
 
+    if (use_ttl) {
+        if ((status = msg_copy_char(msg, ttlstr, strlen(ttlstr))) != NC_OK) {
+            msg_put(msg);
+            return status;
+        }
+    }
+
     if ((status = msg_copy_char(msg, keyvalstr, strlen(keyvalstr))) != NC_OK) {
         msg_put(msg);
         return status;
@@ -604,13 +661,6 @@ add_set_msg_key(struct context *ctx, struct conn* c_conn, char* keyname,
     if ((status = msg_copy_char(msg, "\r\n", 2)) != NC_OK) {
         msg_put(msg);
         return status;
-    }
-
-    if (use_ttl) {
-        if ((status = msg_copy_char(msg, ttlstr, strlen(ttlstr))) != NC_OK) {
-            msg_put(msg);
-            return status;
-        }
     }
 
     msg->swallow = 1;
