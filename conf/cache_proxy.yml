@@ -23,4 +23,7 @@ root:                           # pool name
   backend_max_resend: 2         # number of repeats for backend on error
   backends:                     # list of backend servers
     - 127.0.0.1:8087:1          # backend record, format ip:port:weight
-
+  riak_bucket_ttls:             # format: bucket-type:bucket:ttl
+    - default:low:1500ms
+    - default:high:1h
+    - default:*:15s

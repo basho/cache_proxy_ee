@@ -152,6 +152,7 @@ struct server_pool {
                                               * server_ttl_ms == 0
                                               * will be taken to mean
                                               * never */
+    struct array       riak_bucket_ttls;           /* TTL per bucket-type:bucket */
     unsigned           auto_eject_hosts:1;   /* auto_eject_hosts? */
     unsigned           preconnect:1;         /* preconnect? */
     unsigned           redis:1;              /* redis? */
