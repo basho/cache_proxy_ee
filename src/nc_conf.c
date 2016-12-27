@@ -2193,8 +2193,9 @@ conf_set_backend_type(struct conf *cf, struct command *cmd, void *conf)
 int
 string_compare_with_wildcard(uint8_t *pattern, size_t pattern_len, char *s)
 {
+    int i;
     char pattern_c[pattern_len + 1];
-    for (int i = 0; i < pattern_len; ++i) {
+    for (i = 0; i < pattern_len; ++i) {
         pattern_c[i] = (char)pattern[i];
     }
     pattern_c[pattern_len] = '\0';
